@@ -4,10 +4,11 @@ import uvicorn
 from datetime import datetime, timedelta
 import random
 from jinja2 import Template
+from typing import Any, Dict
 
 app = FastAPI(title="Jupiter Sentinel Dashboard")
 
-def generate_mock_data():
+def generate_mock_data() -> Dict[str, Any]:
     now = datetime.now()
     history = []
     for i in range(10):
@@ -243,13 +244,13 @@ HTML_TEMPLATE = """
 """
 
 @app.get("/", response_class=HTMLResponse)
-async def get_dashboard():
+async def get_dashboard() -> HTMLResponse:
     data = generate_mock_data()
     template = Template(HTML_TEMPLATE)
     html_content = template.render(data=data)
     return HTMLResponse(content=html_content)
 
-def start_server(host="127.0.0.1", port=8000):
+def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     print(f"Starting web dashboard on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
 

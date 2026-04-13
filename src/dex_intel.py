@@ -6,8 +6,8 @@ Uses the /swap/v1/program-id-to-label endpoint + route plan analysis.
 import json
 import urllib.request
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SCAN_PAIRS, SOL_MINT, USDC_MINT
 
@@ -35,7 +35,7 @@ class RouteAnalysis:
 class DexRouteIntel:
     """Analyzes Jupiter's DEX routing decisions across trade sizes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.dex_labels = self._load_dex_labels()
         self.route_cache: Dict[str, List[RouteAnalysis]] = {}
 
@@ -94,8 +94,12 @@ class DexRouteIntel:
         except Exception as e:
             return None
 
-    def find_route_discrepancies(self, input_mint: str, output_mint: str,
-                                  amounts: List[int] = None) -> List[dict]:
+    def find_route_discrepancies(
+        self,
+        input_mint: str,
+        output_mint: str,
+        amounts: Optional[List[int]] = None,
+    ) -> List[dict[str, Any]]:
         """Quote same pair at different sizes to find routing discrepancies."""
         if amounts is None:
             amounts = [1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000]

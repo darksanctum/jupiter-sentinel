@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .analytics import TradingAnalytics
 from .config import (
@@ -170,7 +170,7 @@ class HistoricalPriceFeed:
         input_mint: str,
         output_mint: str,
         points: Sequence[PricePoint],
-    ):
+    ) -> None:
         self.pair_name = pair_name
         self.input_mint = input_mint
         self.output_mint = output_mint
@@ -179,7 +179,7 @@ class HistoricalPriceFeed:
         self._index = -1
         self._recorded_index = -1
 
-    def set_index(self, index: int):
+    def set_index(self, index: int) -> None:
         self._index = index
 
     def fetch_price(self) -> Optional[PricePoint]:
@@ -237,7 +237,7 @@ class HistoricalPriceFeed:
 class HistoricalScanner(VolatilityScanner):
     """Scanner variant that timestamps alerts with historical bar times."""
 
-    def __init__(self, feeds: Sequence[HistoricalPriceFeed]):
+    def __init__(self, feeds: Sequence[HistoricalPriceFeed]) -> None:
         self.feeds = list(feeds)
         self.alerts: List[dict] = []
         self.running = False
@@ -269,16 +269,16 @@ class HistoricalScanner(VolatilityScanner):
 class HistoricalExecutor:
     """A small account simulator that mirrors the `TradeExecutor` balance API."""
 
-    def __init__(self, starting_sol: float, starting_sol_price: float):
+    def __init__(self, starting_sol: float, starting_sol_price: float) -> None:
         self.address = "BACKTEST"
         self.cash_sol = float(starting_sol)
         self.sol_price = float(starting_sol_price)
         self.trade_history: List[dict] = []
 
-    def set_sol_price(self, price: float):
+    def set_sol_price(self, price: float) -> None:
         self.sol_price = float(price)
 
-    def reserve_position(self, amount_sol: float, pair: str, timestamp: float):
+    def reserve_position(self, amount_sol: float, pair: str, timestamp: float) -> None:
         self.cash_sol = max(0.0, self.cash_sol - amount_sol)
         self.trade_history.append(
             {
@@ -298,7 +298,7 @@ class HistoricalExecutor:
         exit_price: float,
         action_type: str,
         timestamp: float,
-    ):
+    ) -> None:
         proceeds_sol = max(position.amount_sol * (1.0 + (pnl_pct / 100.0)), 0.0)
         self.cash_sol += proceeds_sol
         self.trade_history.append(
@@ -325,7 +325,7 @@ class HistoricalExecutor:
 class HistoricalRiskManager(RiskManager):
     """Risk manager that timestamps and settles positions against historical bars."""
 
-    def __init__(self, executor: HistoricalExecutor, feeds_by_pair: Dict[str, HistoricalPriceFeed]):
+    def __init__(self, executor: HistoricalExecutor, feeds_by_pair: Dict[str, HistoricalPriceFeed]) -> None:
         super().__init__(executor)
         self._feeds_by_pair = feeds_by_pair
 
@@ -335,8 +335,8 @@ class HistoricalRiskManager(RiskManager):
         input_mint: str,
         output_mint: str,
         amount_sol: float,
-        stop_loss_pct: float = None,
-        take_profit_pct: float = None,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
         dry_run: bool = True,
     ) -> Optional[Position]:
         balance = self.executor.get_balance()
@@ -451,7 +451,7 @@ class HistoricalBacktester:
         starting_sol: float = 10.0,
         entry_amount_sol: float = 0.25,
         enter_on: str = "down",
-    ):
+    ) -> None:
         if not rows:
             raise ValueError("Backtest requires at least one price row.")
         if enter_on not in {"down", "up", "all"}:
@@ -495,7 +495,7 @@ class HistoricalBacktester:
         direction = alert["direction"].lower()
         return self.enter_on == "all" or direction == self.enter_on
 
-    def _record_equity_snapshot(self, timestamp: datetime):
+    def _record_equity_snapshot(self, timestamp: datetime) -> None:
         total_sol = self.executor.cash_sol
 
         for pos in self.risk_manager.positions:

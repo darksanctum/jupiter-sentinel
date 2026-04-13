@@ -4,6 +4,10 @@ Jupiter Sentinel - Configuration
 import os
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from solders.keypair import Keypair
 
 # Wallet
 SOLANA_KEY_PATH = os.environ.get(
@@ -55,7 +59,7 @@ HEADERS = {
 }
 
 
-def load_keypair():
+def load_keypair() -> "Keypair":
     """Load Solana keypair from file."""
     from solders.keypair import Keypair
     
@@ -65,7 +69,7 @@ def load_keypair():
     return Keypair.from_bytes(bytes(key_bytes))
 
 
-def get_pubkey():
+def get_pubkey() -> str:
     """Get wallet public key without loading full keypair."""
     kp = load_keypair()
     return str(kp.pubkey())

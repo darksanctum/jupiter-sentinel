@@ -73,7 +73,7 @@ class CrossChainArbDetector:
         slippage_bps: int = 50,
         quote_timeout: int = 15,
         require_route_change: bool = True,
-    ):
+    ) -> None:
         self.min_spread_pct = min_spread_pct
         self.slippage_bps = slippage_bps
         self.quote_timeout = quote_timeout
@@ -219,14 +219,14 @@ class CrossChainArbDetector:
 
         return tuple(labels)
 
-    def _safe_float(self, value, default: float = 0.0) -> float:
+    def _safe_float(self, value: object, default: float = 0.0) -> float:
         try:
             return float(value)
         except (TypeError, ValueError):
             return default
 
 
-def run_standalone():
+def run_standalone() -> None:
     detector = CrossChainArbDetector()
     report = detector.scan_all()
 

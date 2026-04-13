@@ -6,7 +6,7 @@ import json
 import time
 import urllib.request
 import base58
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
 from .config import (
@@ -21,10 +21,10 @@ class TradeExecutor:
     Handles quote fetching, transaction signing, and broadcasting.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.keypair = load_keypair()
         self.pubkey = str(self.keypair.pubkey())
-        self.trade_history = []
+        self.trade_history: list[dict[str, Any]] = []
     
     def get_quote(
         self,
@@ -32,7 +32,7 @@ class TradeExecutor:
         output_mint: str,
         amount: int,
         slippage_bps: int = 300,
-    ) -> Optional[dict]:
+    ) -> Optional[dict[str, Any]]:
         """Get a swap quote from Jupiter."""
         url = (
             f"{JUPITER_SWAP_V1}/quote?"
@@ -55,7 +55,7 @@ class TradeExecutor:
         amount: int,
         slippage_bps: int = 300,
         dry_run: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Execute a swap via Jupiter.
         
@@ -69,7 +69,7 @@ class TradeExecutor:
         Returns:
             dict with quote details and tx signature (if executed)
         """
-        result = {
+        result: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "input_mint": input_mint,
             "output_mint": output_mint,
@@ -163,7 +163,7 @@ class TradeExecutor:
         self.trade_history.append(result)
         return result
     
-    def get_balance(self) -> dict:
+    def get_balance(self) -> dict[str, Any]:
         """Get wallet SOL balance."""
         rpc_body = json.dumps({
             "jsonrpc": "2.0",

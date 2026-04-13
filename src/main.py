@@ -7,6 +7,8 @@ import json
 import signal
 import sys
 from datetime import datetime
+from types import FrameType
+from typing import Any, Optional
 
 from .config import SCAN_PAIRS
 from .scanner import VolatilityScanner
@@ -25,7 +27,7 @@ class JupiterSentinel:
     - Route Arbitrage Detector
     """
     
-    def __init__(self, dry_run: bool = True):
+    def __init__(self, dry_run: bool = True) -> None:
         self.dry_run = dry_run
         self.scanner = VolatilityScanner()
         self.executor = TradeExecutor()
@@ -35,7 +37,7 @@ class JupiterSentinel:
         self.running = False
         self.cycle = 0
     
-    def start(self):
+    def start(self) -> None:
         """Start the sentinel agent."""
         print()
         print("JUPITER SENTINEL")
@@ -73,7 +75,7 @@ class JupiterSentinel:
         print("Starting volatility scanner...")
         self.running = True
         
-        def on_alert(alerts):
+        def on_alert(alerts: list[dict[str, Any]]) -> None:
             for a in alerts:
                 self._handle_alert(a)
         
@@ -82,7 +84,7 @@ class JupiterSentinel:
         except KeyboardInterrupt:
             self.shutdown()
     
-    def _handle_alert(self, alert: dict):
+    def _handle_alert(self, alert: dict[str, Any]) -> None:
         """Handle a volatility alert from the scanner."""
         self.cycle += 1
         
@@ -120,7 +122,7 @@ class JupiterSentinel:
         
         print(f"{'='*50}")
     
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Graceful shutdown with report."""
         self.running = False
         self.scanner.stop()
@@ -153,12 +155,12 @@ class JupiterSentinel:
         print(f"\nReport saved to data/report_{ts}.json")
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     dry_run = "--live" not in sys.argv
     sentinel = JupiterSentinel(dry_run=dry_run)
     
-    def sig_handler(sig, frame):
+    def sig_handler(sig: int, frame: Optional[FrameType]) -> None:
         sentinel.shutdown()
         sys.exit(0)
     

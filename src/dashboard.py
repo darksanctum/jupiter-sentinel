@@ -8,6 +8,7 @@ import random
 import urllib.request
 import collections
 from datetime import datetime
+from typing import Any, Optional, Sequence
 
 try:
     from rich.console import Console
@@ -28,7 +29,7 @@ from .config import (
 )
 
 
-def get_sol_price():
+def get_sol_price() -> Optional[float]:
     try:
         url = f"{JUPITER_SWAP_V1}/quote?inputMint={SOL_MINT}&outputMint={USDC_MINT}&amount=1000000&slippageBps=10"
         req = urllib.request.Request(url, headers=HEADERS)
@@ -38,7 +39,7 @@ def get_sol_price():
         return None
 
 
-def get_wallet_balance():
+def get_wallet_balance() -> float:
     try:
         from .config import get_pubkey
         pubkey = get_pubkey()
@@ -55,7 +56,7 @@ def get_wallet_balance():
         return 0.0
 
 
-def ascii_plot(series, height=12):
+def ascii_plot(series: Sequence[float], height: int = 12) -> str:
     if not series:
         return "Waiting for data..."
     min_val = min(series)
@@ -83,7 +84,7 @@ def ascii_plot(series, height=12):
     return "\n".join(result)
 
 
-def get_header_panel(sol_balance, usd_value, current_price):
+def get_header_panel(sol_balance: float, usd_value: float, current_price: float) -> Any:
     return Panel(
         Text.from_markup(
             f"[bold cyan]JUPITER SENTINEL[/] | [dim]Autonomous AI DeFi Agent[/]\n"
@@ -95,7 +96,7 @@ def get_header_panel(sol_balance, usd_value, current_price):
     )
 
 
-def get_trade_history_table():
+def get_trade_history_table() -> Any:
     trade_history = [
         {"time": "10:01:23", "pair": "SOL/USDC", "type": "BUY", "amount": "10.5 SOL", "price": "$145.20", "status": "Success"},
         {"time": "09:45:11", "pair": "JUP/USDC", "type": "SELL", "amount": "1000 JUP", "price": "$1.20", "status": "Success"},
@@ -118,7 +119,7 @@ def get_trade_history_table():
     return table
 
 
-def get_positions_table(current_sol_price):
+def get_positions_table(current_sol_price: float) -> Any:
     positions = [
         {"asset": "SOL", "amount": 15.5, "entry": 140.50, "current": current_sol_price},
         {"asset": "JUP", "amount": 5000, "entry": 1.15, "current": 1.22},
@@ -148,10 +149,10 @@ def get_positions_table(current_sol_price):
 
 import threading
 
-_cached_routes = []
-_last_route_fetch = 0
+_cached_routes: list[str] = []
+_last_route_fetch = 0.0
 
-def fetch_real_routes():
+def fetch_real_routes() -> None:
     global _cached_routes, _last_route_fetch
     try:
         from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
@@ -184,7 +185,7 @@ def fetch_real_routes():
     except Exception:
         pass
 
-def get_dex_routes_panel():
+def get_dex_routes_panel() -> Any:
     global _cached_routes, _last_route_fetch
     if not _cached_routes or (time.time() - _last_route_fetch) > 30:
         threading.Thread(target=fetch_real_routes, daemon=True).start()
@@ -205,7 +206,10 @@ def get_dex_routes_panel():
     )
 
 
-def get_sentiment_panel(fng_data, trending):
+def get_sentiment_panel(
+    fng_data: Optional[dict[str, Any]],
+    trending: Sequence[dict[str, Any]],
+) -> Any:
     if not fng_data:
         return Panel(Text("Loading sentiment..."), title="Market Sentiment", border_style="yellow")
     color = "red" if fng_data["value"] <= 25 else ("yellow" if fng_data["value"] <= 45 else ("green" if fng_data["value"] >= 55 else "white"))
@@ -223,7 +227,7 @@ def get_sentiment_panel(fng_data, trending):
     )
 
 
-def generate_layout():
+def generate_layout() -> Any:
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=3),
@@ -245,7 +249,7 @@ def generate_layout():
     return layout
 
 
-def generate_dashboard():
+def generate_dashboard() -> None:
     if not HAS_RICH:
         print("Install rich: pip install rich")
         return

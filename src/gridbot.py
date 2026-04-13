@@ -5,7 +5,7 @@ Implements a grid trading bot using Jupiter swap quotes.
 import json
 import urllib.request
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT, load_keypair
 
@@ -32,8 +32,12 @@ class GridState:
 class GridBot:
     """Grid trading bot using Jupiter quotes for price discovery."""
 
-    def __init__(self, grid_spacing_pct: float = 1.0, num_levels: int = 10,
-                 amount_per_level_sol: float = 0.001):
+    def __init__(
+        self,
+        grid_spacing_pct: float = 1.0,
+        num_levels: int = 10,
+        amount_per_level_sol: float = 0.001,
+    ) -> None:
         self.grid_spacing_pct = grid_spacing_pct
         self.num_levels = num_levels
         self.amount_per_level = amount_per_level_sol
@@ -83,7 +87,7 @@ class GridBot:
         self.grids.append(grid)
         return grid
 
-    def check_grid(self, grid: GridState, current_price: float) -> List[dict]:
+    def check_grid(self, grid: GridState, current_price: float) -> List[dict[str, Any]]:
         """Check which grid levels are triggered by current price."""
         triggered = []
         for level in grid.levels:

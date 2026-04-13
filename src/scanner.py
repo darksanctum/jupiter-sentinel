@@ -6,7 +6,7 @@ Uses Jupiter's quote engine as a real-time price oracle.
 import time
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 from .config import SCAN_PAIRS, SCAN_INTERVAL_SECS, VOLATILITY_THRESHOLD
 from .oracle import PriceFeed
@@ -21,7 +21,7 @@ class VolatilityScanner:
     price feed by repeatedly quoting small amounts across pairs.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.feeds: List[PriceFeed] = []
         self.alerts: List[dict] = []
         self.running = False
@@ -33,7 +33,7 @@ class VolatilityScanner:
                 output_mint=output_mint,
             ))
     
-    def scan_once(self) -> List[dict]:
+    def scan_once(self) -> List[dict[str, Any]]:
         """Run one scan cycle across all pairs."""
         new_alerts = []
         timestamp = datetime.utcnow().isoformat()
@@ -62,7 +62,11 @@ class VolatilityScanner:
         
         return new_alerts
     
-    def scan_loop(self, callback=None, max_iterations=None):
+    def scan_loop(
+        self,
+        callback: Optional[Callable[[List[dict[str, Any]]], None]] = None,
+        max_iterations: Optional[int] = None,
+    ) -> None:
         """
         Continuous scanning loop.
         
@@ -88,7 +92,7 @@ class VolatilityScanner:
             iteration += 1
             time.sleep(SCAN_INTERVAL_SECS)
     
-    def _print_status(self):
+    def _print_status(self) -> None:
         """Print current scanner status."""
         now = datetime.utcnow().strftime("%H:%M:%S")
         print(f"\n[{now}] Scanner Status:")
@@ -105,10 +109,10 @@ class VolatilityScanner:
                     f"({feed.volatility:.4f})"
                 )
     
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
     
-    def get_report(self) -> dict:
+    def get_report(self) -> dict[str, Any]:
         """Generate a full scanner report."""
         return {
             "timestamp": datetime.utcnow().isoformat(),
@@ -118,7 +122,7 @@ class VolatilityScanner:
         }
 
 
-def run_standalone():
+def run_standalone() -> None:
     """Run scanner in standalone mode."""
     print("Jupiter Sentinel - Volatility Scanner")
     print("=" * 50)
@@ -129,7 +133,7 @@ def run_standalone():
     
     scanner = VolatilityScanner()
     
-    def on_alert(alerts):
+    def on_alert(alerts: List[dict[str, Any]]) -> None:
         for a in alerts:
             emoji = "🚀" if a["direction"] == "UP" else "⚠️"
             print(

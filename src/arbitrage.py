@@ -4,7 +4,7 @@ Detects price discrepancies between different swap routes on Jupiter.
 """
 import json
 import urllib.request
-from typing import Optional, List, Dict
+from typing import Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -33,7 +33,7 @@ class RouteArbitrage:
     inefficiencies.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.opportunities: List[ArbitrageOpportunity] = []
     
     def scan_pair(
@@ -41,7 +41,7 @@ class RouteArbitrage:
         input_mint: str,
         output_mint: str,
         pair_name: str,
-        amounts: List[int] = None,
+        amounts: Optional[List[int]] = None,
     ) -> List[ArbitrageOpportunity]:
         """
         Scan a pair for route arbitrage by quoting different amounts.
@@ -127,7 +127,7 @@ class RouteArbitrage:
         
         return opps
     
-    def scan_all(self, pairs: List[tuple]) -> dict:
+    def scan_all(self, pairs: List[tuple[str, str, str]]) -> dict[str, Any]:
         """Scan all configured pairs for arbitrage."""
         report = {
             "timestamp": datetime.utcnow().isoformat(),

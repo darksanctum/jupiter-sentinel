@@ -97,7 +97,7 @@ class TradingAnalytics:
     - `realized_trades` for closed trades that can feed performance metrics
     """
 
-    def __init__(self, starting_equity: float = 1.0, periods_per_year: int = 365):
+    def __init__(self, starting_equity: float = 1.0, periods_per_year: int = 365) -> None:
         self.starting_equity = float(starting_equity) if starting_equity > 0 else 1.0
         self.periods_per_year = periods_per_year
         self.executions: List[TradeExecution] = []

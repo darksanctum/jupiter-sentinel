@@ -4,13 +4,13 @@ Detects price discrepancies between SOL->Token and Token->SOL routes.
 """
 import json
 import urllib.request
-from typing import Optional, List
+from typing import Any, Dict, List
 from datetime import datetime
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT, SCAN_PAIRS
 
 
-def detect_triangular_arb():
+def detect_triangular_arb() -> List[Dict[str, Any]]:
     """
     Detect triangular arbitrage: SOL -> Token -> USDC -> SOL
     If the product of the three exchange rates > 1, there's profit.
@@ -34,7 +34,7 @@ def detect_triangular_arb():
     print(f"SOL/USDC: ${sol_usdc:.2f}")
     print()
     
-    opportunities = []
+    opportunities: List[Dict[str, Any]] = []
     
     for input_mint, output_mint, name in SCAN_PAIRS:
         if name == "SOL/USDC":

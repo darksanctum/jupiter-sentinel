@@ -1,17 +1,17 @@
 import time
 import json
 import urllib.request
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 class SentimentAnalyzer:
     """
     Fetches crypto market sentiment indicators like the Fear & Greed Index
     and trending tokens from CoinGecko. Caches results to avoid rate limits.
     """
-    def __init__(self):
-        self.fng_cache = None
+    def __init__(self) -> None:
+        self.fng_cache: Optional[Dict[str, Any]] = None
         self.fng_last_fetch = 0
-        self.trending_cache = None
+        self.trending_cache: Optional[List[Dict[str, Any]]] = None
         self.trending_last_fetch = 0
         self.cache_ttl = 300  # 5 minutes cache
 

@@ -31,7 +31,7 @@ class DCAState:
     pnl_sol: float = 0.0
     pnl_pct: float = 0.0
 
-    def update_stats(self):
+    def update_stats(self) -> None:
         if self.entries:
             self.total_invested_sol = sum(e.amount_sol for e in self.entries)
             self.total_token_received = sum(e.token_received for e in self.entries)
@@ -42,10 +42,10 @@ class DCAState:
 class DCABot:
     """Dollar-cost averaging bot using Jupiter swaps."""
 
-    def __init__(self, amount_per_buy_sol: float = 0.001, interval_seconds: int = 3600):
+    def __init__(self, amount_per_buy_sol: float = 0.001, interval_seconds: int = 3600) -> None:
         self.amount_per_buy = amount_per_buy_sol
         self.interval = interval_seconds
-        self.positions: dict = {}
+        self.positions: dict[str, DCAState] = {}
 
     def get_quote(self, input_mint: str, output_mint: str, amount_lamports: int) -> Optional[dict]:
         try:

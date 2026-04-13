@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import Dict
+from typing import Dict, Optional
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 from solders.signature import Signature
@@ -24,12 +24,12 @@ LAMPORTS_PER_SOL = 1_000_000_000
 WHALE_THRESHOLD_SOL = 100.0
 
 class WhaleWatcher:
-    def __init__(self, rpc_url: str = "https://api.mainnet-beta.solana.com"):
+    def __init__(self, rpc_url: str = "https://api.mainnet-beta.solana.com") -> None:
         self.client = Client(rpc_url)
         self.exchanges = {Pubkey.from_string(k): v for k, v in EXCHANGES.items()}
-        self.last_signatures: Dict[Pubkey, Signature] = {pk: None for pk in self.exchanges.keys()}
+        self.last_signatures: Dict[Pubkey, Optional[Signature]] = {pk: None for pk in self.exchanges.keys()}
 
-    def start(self, poll_interval: int = 10):
+    def start(self, poll_interval: int = 10) -> None:
         logger.info("Starting Whale Watcher...")
         logger.info(f"Whale Threshold: {WHALE_THRESHOLD_SOL} SOL")
         
@@ -41,11 +41,11 @@ class WhaleWatcher:
             
             time.sleep(poll_interval)
 
-    def check_exchanges(self):
+    def check_exchanges(self) -> None:
         for exchange_pubkey, exchange_name in self.exchanges.items():
             self._check_exchange(exchange_pubkey, exchange_name)
 
-    def _check_exchange(self, exchange_pubkey: Pubkey, exchange_name: str):
+    def _check_exchange(self, exchange_pubkey: Pubkey, exchange_name: str) -> None:
         # Fetch recent signatures for the exchange
         last_sig = self.last_signatures[exchange_pubkey]
         kwargs = {"limit": 10}
@@ -76,7 +76,12 @@ class WhaleWatcher:
         except Exception as e:
             logger.error(f"Error checking {exchange_name}: {e}")
 
-    def _process_transaction(self, signature: Signature, exchange_pubkey: Pubkey, exchange_name: str):
+    def _process_transaction(
+        self,
+        signature: Signature,
+        exchange_pubkey: Pubkey,
+        exchange_name: str,
+    ) -> None:
         try:
             # fetch transaction info
             tx_resp = self.client.get_transaction(signature, max_supported_transaction_version=0)

@@ -5,7 +5,7 @@ using real-time Jupiter price data.
 """
 import time
 import json
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -31,6 +31,8 @@ class Position:
     trailing_stop_pct: float = 0.03  # 3% trailing
     highest_price: float = 0.0
     status: str = "open"
+    notional: float = 0.0
+    tx_buy: Optional[str] = None
 
 
 class RiskManager:
@@ -44,11 +46,11 @@ class RiskManager:
     - Maximum position limits
     """
     
-    def __init__(self, executor: TradeExecutor):
+    def __init__(self, executor: TradeExecutor) -> None:
         self.executor = executor
         self.positions: List[Position] = []
-        self.closed_positions: List[dict] = []
-        self.price_feeds = {}
+        self.closed_positions: List[dict[str, Any]] = []
+        self.price_feeds: Dict[str, PriceFeed] = {}
     
     def open_position(
         self,
@@ -56,8 +58,8 @@ class RiskManager:
         input_mint: str,
         output_mint: str,
         amount_sol: float,
-        stop_loss_pct: float = None,
-        take_profit_pct: float = None,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
         dry_run: bool = True,
     ) -> Optional[Position]:
         """
@@ -193,7 +195,7 @@ class RiskManager:
         
         return actions
     
-    def get_portfolio_report(self) -> dict:
+    def get_portfolio_report(self) -> dict[str, Any]:
         """Generate portfolio status report."""
         balance = self.executor.get_balance()
         
