@@ -15,6 +15,7 @@ from typing import Any, Callable, Optional
 from .config import DATA_DIR, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
 from .executor import TradeExecutor
 from .oracle import PriceFeed
+from .regime_detector import RegimeDetector, MarketRegime
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
 from .state_manager import StateManager
@@ -71,6 +72,7 @@ class AutoTrader:
         self.scanner = scanner or VolatilityScanner()
         self.executor = executor or TradeExecutor()
         self.risk_manager = risk_manager or RiskManager(self.executor)
+        self.regime_detector = RegimeDetector()
         setattr(self.risk_manager, "state_path", self.state_path)
 
         self.running = False
@@ -194,18 +196,33 @@ class AutoTrader:
             self._log(f"Skipping {pair}: no non-SOL asset to trade for this pair")
             return
 
+        shared_feed = self._ensure_scanner_feed(pair, scan_input_mint, scan_output_mint)
+        regime = self.regime_detector.detect(shared_feed)
+
+        if regime == MarketRegime.BEAR:
+            self._log(f"Skipping {pair}: market regime is BEAR (no longs)")
+            return
+
+        stop_loss_pct = None
+        take_profit_pct = None
+        if regime == MarketRegime.VOLATILE:
+            self._log(f"Market is VOLATILE for {pair}, using wider stops")
+            stop_loss_pct = 0.15
+            take_profit_pct = 0.30
+
         position = self.risk_manager.open_position(
             pair=pair,
             input_mint=scan_input_mint,
             output_mint=scan_output_mint,
             amount_sol=self.entry_amount_sol,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
             dry_run=True,
         )
         if position is None:
             self._log(f"Risk manager rejected {pair}")
             return
 
-        shared_feed = self._ensure_scanner_feed(pair, scan_input_mint, scan_output_mint)
         self.risk_manager.price_feeds[pair] = shared_feed
 
         entry_amount_lamports = int(position.amount_sol * 1e9)
