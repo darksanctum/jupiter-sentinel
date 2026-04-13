@@ -1,4 +1,5 @@
 import sys
+import types
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -6,11 +7,31 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+fake_state_manager = types.ModuleType("src.state_manager")
+
+
+class FakeStateManager:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def get_locked_balance(self):
+        return 0.0
+
+
+fake_state_manager.DEFAULT_LOCK_PCT = 0.5
+fake_state_manager.LOCK_PCT_ENV = "LOCK_PCT"
+fake_state_manager.StateManager = FakeStateManager
+sys.modules.setdefault("src.state_manager", fake_state_manager)
+
 from src.backtest import (
     HistoricalBacktester,
     HistoricalPriceRow,
+    format_strategy_comparison_report,
+    generate_sample_rows,
     load_price_rows,
     render_equity_curve,
+    run_parallel_backtests,
+    write_backtest_report,
 )
 
 
@@ -72,3 +93,53 @@ def test_load_price_rows_from_csv_and_render_curve(tmp_path):
     assert rows[0].prices["SOL/USDC"] == pytest.approx(100.0)
     assert "max $1001.00" in chart
     assert "*" in chart
+
+
+def test_load_price_rows_from_directory_merges_pair_files(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    (data_dir / "sol_usdc.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,price",
+                "2024-04-12T00:00:00,100",
+                "2024-04-12T00:30:00,101",
+            ]
+        )
+    )
+    (data_dir / "jup_usdc.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,price",
+                "2024-04-12T00:00:00,1.00",
+                "2024-04-12T00:30:00,0.98",
+            ]
+        )
+    )
+
+    rows, source = load_price_rows(data_dir)
+
+    assert "2 files" in source
+    assert len(rows) == 2
+    assert rows[0].prices["SOL/USDC"] == pytest.approx(100.0)
+    assert rows[1].prices["JUP/USDC"] == pytest.approx(0.98)
+
+
+def test_parallel_backtests_generate_markdown_report(tmp_path):
+    results = run_parallel_backtests(generate_sample_rows(), starting_sol=10.0, entry_amount_sol=0.25)
+    report = format_strategy_comparison_report(results, source="synthetic sample")
+    report_path = write_backtest_report(report, tmp_path / "backtest_report.md")
+
+    assert len(results) == 3
+    assert report_path.exists()
+    assert report_path.read_text().startswith("# Jupiter Sentinel Backtest Report")
+    assert "volatility_reversal" in report
+    assert "momentum" in report
+    assert "mean_reversion" in report
+
+    for result in results:
+        assert "sharpe_ratio" in result.summary
+        assert "sortino_ratio" in result.summary
+        assert "max_drawdown_pct" in result.summary
+        assert "win_rate" in result.summary
