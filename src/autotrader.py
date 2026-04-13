@@ -4,7 +4,6 @@ Wires the scanner, risk manager, executor, and oracle into
 one persistent trading loop with restart recovery.
 """
 import argparse
-import json
 import signal
 import sys
 import time
@@ -15,13 +14,12 @@ from typing import Any, Callable, Optional
 
 from .config import DATA_DIR, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
 from .executor import TradeExecutor
-from .oracle import PriceFeed, PricePoint
-from .profit_locker import lock_profit
+from .oracle import PriceFeed
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
+from .state_manager import StateManager
 
 SUCCESS_STATUSES = {"success", "dry_run"}
-STATE_VERSION = 1
 
 
 class AutoTrader:
@@ -68,10 +66,12 @@ class AutoTrader:
 
         self.state_path = Path(state_path).expanduser()
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_manager = StateManager(self.state_path, logger=self._log)
 
         self.scanner = scanner or VolatilityScanner()
         self.executor = executor or TradeExecutor()
         self.risk_manager = risk_manager or RiskManager(self.executor)
+        setattr(self.risk_manager, "state_path", self.state_path)
 
         self.running = False
         self.cycle = 0
@@ -79,12 +79,13 @@ class AutoTrader:
         self.pair_lookup = {name: (input_mint, output_mint) for input_mint, output_mint, name in SCAN_PAIRS}
         self._feed_by_pair: dict[str, PriceFeed] = {}
         self._index_scanner_feeds()
-        self._load_state()
+        self.state_manager.load_into_trader(self)
 
     def run(self, max_iterations: Optional[int] = None) -> None:
         """Start the continuous trading loop."""
         self.running = True
         iteration = 0
+        self.state_manager.start_autosave(lambda: self.state_manager.save_trader_state(self))
 
         self._log("AUTO TRADER START")
         self._log(f"Mode: {'DRY RUN' if self.dry_run else 'LIVE'}")
@@ -133,6 +134,8 @@ class AutoTrader:
 
     def stop(self) -> None:
         """Stop the loop and persist the latest state."""
+        self.state_manager.stop_autosave()
+
         if not self.running:
             self.scanner.stop()
             self.save_state()
@@ -152,10 +155,7 @@ class AutoTrader:
 
     def save_state(self) -> None:
         """Atomically persist the runtime state to disk."""
-        payload = self._build_state_payload()
-        tmp_path = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-        tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        tmp_path.replace(self.state_path)
+        self.state_manager.save_trader_state(self)
 
     def _handle_alert(self, alert: dict[str, Any]) -> None:
         """Evaluate a scanner alert and open a position when eligible."""
@@ -290,7 +290,7 @@ class AutoTrader:
         if realized_profit_sol > 0:
             closed_record["realized_profit_sol"] = realized_profit_sol
             if not self.dry_run:
-                locked_profit_sol = lock_profit(realized_profit_sol)
+                locked_profit_sol = self.state_manager.lock_profit(realized_profit_sol)
                 closed_record["locked_profit_sol"] = locked_profit_sol
                 self._log(f"Locked {locked_profit_sol:.6f} SOL from realized profit on {pair}")
 
@@ -368,198 +368,6 @@ class AutoTrader:
         if output_mint not in {SOL_MINT, USDC_MINT}:
             return output_mint
         return None
-
-    def _build_state_payload(self) -> dict[str, Any]:
-        open_positions = []
-        for position in self.risk_manager.positions:
-            if position.status != "open":
-                continue
-            open_positions.append(
-                {
-                    "position": self._serialize_position(position),
-                    "meta": dict(self.position_meta.get(position.pair, {})),
-                }
-            )
-
-        closed_positions = []
-        for record in self.risk_manager.closed_positions:
-            position = record.get("position")
-            if not isinstance(position, Position):
-                continue
-
-            payload: dict[str, Any] = {
-                "position": self._serialize_position(position),
-                "action": dict(record.get("action", {})),
-                "timestamp": record.get("timestamp"),
-            }
-            for key in (
-                "meta",
-                "entry_result",
-                "exit_result",
-                "notional",
-                "pnl_amount",
-                "realized_profit_sol",
-                "locked_profit_sol",
-            ):
-                if key in record:
-                    payload[key] = record[key]
-            closed_positions.append(payload)
-
-        scanner_feeds = []
-        for feed in self.scanner.feeds:
-            scanner_feeds.append(
-                {
-                    "pair": feed.pair_name,
-                    "input_mint": feed.input_mint,
-                    "output_mint": feed.output_mint,
-                    "history": [
-                        {
-                            "timestamp": point.timestamp,
-                            "price": point.price,
-                            "volume_estimate": point.volume_estimate,
-                        }
-                        for point in feed.history
-                    ],
-                }
-            )
-
-        return {
-            "version": STATE_VERSION,
-            "updated_at": datetime.utcnow().isoformat(),
-            "dry_run": self.dry_run,
-            "cycle": self.cycle,
-            "entry_amount_sol": self.entry_amount_sol,
-            "enter_on": self.enter_on,
-            "max_open_positions": self.max_open_positions,
-            "scan_interval_secs": self.scan_interval_secs,
-            "open_positions": open_positions,
-            "closed_positions": closed_positions,
-            "trade_history": list(self.executor.trade_history),
-            "alerts": list(self.scanner.alerts[-200:]),
-            "scanner_feeds": scanner_feeds,
-        }
-
-    def _load_state(self) -> None:
-        """Restore persisted open positions, feed history, and trade history."""
-        if not self.state_path.exists():
-            return
-
-        try:
-            payload = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            self._log(f"Could not load state file {self.state_path}: {exc}")
-            return
-
-        self.cycle = int(payload.get("cycle", 0) or 0)
-        self.executor.trade_history = list(payload.get("trade_history", []))
-        self.scanner.alerts = list(payload.get("alerts", []))
-        self.position_meta = {}
-        self.risk_manager.positions = []
-        self.risk_manager.closed_positions = []
-        self.risk_manager.price_feeds = {}
-
-        self._load_scanner_feeds(payload.get("scanner_feeds", []))
-
-        for record in payload.get("open_positions", []):
-            position_payload = record.get("position")
-            position = self._deserialize_position(position_payload)
-            if position is None:
-                continue
-
-            meta = dict(record.get("meta", {}))
-            self.position_meta[position.pair] = meta
-            self.risk_manager.positions.append(position)
-
-            scan_input_mint = str(meta.get("scan_input_mint", position.input_mint))
-            scan_output_mint = str(meta.get("scan_output_mint", position.output_mint))
-            self.risk_manager.price_feeds[position.pair] = self._ensure_scanner_feed(
-                position.pair,
-                scan_input_mint,
-                scan_output_mint,
-            )
-
-        for record in payload.get("closed_positions", []):
-            position = self._deserialize_position(record.get("position"))
-            if position is None:
-                continue
-
-            restored: dict[str, Any] = {
-                "position": position,
-                "action": dict(record.get("action", {})),
-                "timestamp": record.get("timestamp"),
-            }
-            for key in (
-                "meta",
-                "entry_result",
-                "exit_result",
-                "notional",
-                "pnl_amount",
-                "realized_profit_sol",
-                "locked_profit_sol",
-            ):
-                if key in record:
-                    restored[key] = record[key]
-            self.risk_manager.closed_positions.append(restored)
-
-    def _load_scanner_feeds(self, saved_feeds: list[dict[str, Any]]) -> None:
-        for feed_payload in saved_feeds:
-            pair = str(feed_payload.get("pair", ""))
-            input_mint = str(feed_payload.get("input_mint", ""))
-            output_mint = str(feed_payload.get("output_mint", ""))
-            if not pair or not input_mint or not output_mint:
-                continue
-
-            feed = self._ensure_scanner_feed(pair, input_mint, output_mint)
-            feed.history.clear()
-            for point_payload in feed_payload.get("history", []):
-                try:
-                    point = PricePoint(
-                        timestamp=float(point_payload["timestamp"]),
-                        price=float(point_payload["price"]),
-                        volume_estimate=float(point_payload.get("volume_estimate", 0.0) or 0.0),
-                    )
-                except (KeyError, TypeError, ValueError):
-                    continue
-                feed.history.append(point)
-
-    def _serialize_position(self, position: Position) -> dict[str, Any]:
-        return {
-            "pair": position.pair,
-            "input_mint": position.input_mint,
-            "output_mint": position.output_mint,
-            "entry_price": position.entry_price,
-            "amount_sol": position.amount_sol,
-            "entry_time": position.entry_time,
-            "stop_loss_pct": position.stop_loss_pct,
-            "take_profit_pct": position.take_profit_pct,
-            "trailing_stop_pct": position.trailing_stop_pct,
-            "highest_price": position.highest_price,
-            "status": position.status,
-            "notional": position.notional,
-            "tx_buy": position.tx_buy,
-        }
-
-    def _deserialize_position(self, payload: Any) -> Optional[Position]:
-        if not isinstance(payload, dict):
-            return None
-        try:
-            return Position(
-                pair=str(payload["pair"]),
-                input_mint=str(payload["input_mint"]),
-                output_mint=str(payload["output_mint"]),
-                entry_price=float(payload["entry_price"]),
-                amount_sol=float(payload["amount_sol"]),
-                entry_time=float(payload["entry_time"]),
-                stop_loss_pct=float(payload.get("stop_loss_pct", 0.0)),
-                take_profit_pct=float(payload.get("take_profit_pct", 0.0)),
-                trailing_stop_pct=float(payload.get("trailing_stop_pct", 0.03)),
-                highest_price=float(payload.get("highest_price", payload["entry_price"])),
-                status=str(payload.get("status", "open")),
-                notional=float(payload.get("notional", 0.0) or 0.0),
-                tx_buy=payload.get("tx_buy"),
-            )
-        except (KeyError, TypeError, ValueError):
-            return None
 
     def _log(self, message: str) -> None:
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")

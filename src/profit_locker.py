@@ -1,81 +1,22 @@
 """
 Jupiter Sentinel - Profit Locker
-Persists a locked SOL balance so realized gains can be reserved
-outside of the tradable wallet allocation.
+Thin compatibility wrapper over the shared bot state manager.
 """
 from __future__ import annotations
 
-import json
 import math
-import os
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from .config import DATA_DIR
 from .executor import TradeExecutor
+from .state_manager import DEFAULT_LOCK_PCT, LOCK_PCT_ENV, StateManager
 
-STATE_VERSION = 1
-DEFAULT_LOCK_PCT = 0.50
-LOCK_PCT_ENV = "PROFIT_LOCK_PCT"
-PROFIT_LOCK_PATH = DATA_DIR / "profits.json"
+PROFIT_LOCK_PATH = DATA_DIR / "state.json"
 
 
-def _resolve_path(path: Optional[Path | str] = None) -> Path:
-    resolved = Path(path).expanduser() if path is not None else PROFIT_LOCK_PATH
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    return resolved
-
-
-def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _default_state() -> dict[str, Any]:
-    return {
-        "version": STATE_VERSION,
-        "locked_balance": 0.0,
-        "updated_at": _utcnow(),
-    }
-
-
-def _load_state(path: Optional[Path | str] = None) -> dict[str, Any]:
-    state_path = _resolve_path(path)
-    if not state_path.exists():
-        return _default_state()
-
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid profit locker file: {state_path}") from exc
-
-    locked_balance = float(payload.get("locked_balance", 0.0) or 0.0)
-    if not math.isfinite(locked_balance) or locked_balance < 0:
-        raise ValueError(f"Invalid locked_balance in profit locker file: {state_path}")
-
-    return {
-        "version": int(payload.get("version", STATE_VERSION) or STATE_VERSION),
-        "locked_balance": locked_balance,
-        "updated_at": str(payload.get("updated_at", "")),
-    }
-
-
-def _write_state(state: dict[str, Any], path: Optional[Path | str] = None) -> None:
-    state_path = _resolve_path(path)
-    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    tmp_path.replace(state_path)
-
-
-def _resolve_lock_pct(lock_pct: Optional[float] = None) -> float:
-    if lock_pct is None:
-        raw_value = os.environ.get(LOCK_PCT_ENV, "").strip()
-        lock_pct = DEFAULT_LOCK_PCT if not raw_value else float(raw_value)
-
-    if not math.isfinite(lock_pct) or lock_pct < 0 or lock_pct > 1:
-        raise ValueError("lock_pct must be a finite decimal between 0 and 1")
-
-    return float(lock_pct)
+def _resolve_manager(path: Optional[Path | str] = None) -> StateManager:
+    return StateManager(path or PROFIT_LOCK_PATH)
 
 
 def lock_profit(amount: float, lock_pct: Optional[float] = None, path: Optional[Path | str] = None) -> float:
@@ -84,23 +25,12 @@ def lock_profit(amount: float, lock_pct: Optional[float] = None, path: Optional[
 
     Returns the amount that was added to the locked balance.
     """
-    amount = float(amount)
-    if not math.isfinite(amount):
-        raise ValueError("amount must be a finite number")
-    if amount <= 0:
-        return 0.0
-
-    state = _load_state(path)
-    locked_amount = amount * _resolve_lock_pct(lock_pct)
-    state["locked_balance"] = state["locked_balance"] + locked_amount
-    state["updated_at"] = _utcnow()
-    _write_state(state, path)
-    return locked_amount
+    return _resolve_manager(path).lock_profit(amount, lock_pct=lock_pct)
 
 
 def get_locked_balance(path: Optional[Path | str] = None) -> float:
     """Return the total locked SOL balance."""
-    return float(_load_state(path)["locked_balance"])
+    return _resolve_manager(path).get_locked_balance()
 
 
 def get_tradable_balance(
@@ -127,4 +57,11 @@ def get_tradable_balance(
     return max(total_balance - get_locked_balance(path), 0.0)
 
 
-__all__ = ["lock_profit", "get_locked_balance", "get_tradable_balance"]
+__all__ = [
+    "DEFAULT_LOCK_PCT",
+    "LOCK_PCT_ENV",
+    "PROFIT_LOCK_PATH",
+    "get_locked_balance",
+    "get_tradable_balance",
+    "lock_profit",
+]

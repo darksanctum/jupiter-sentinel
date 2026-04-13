@@ -161,8 +161,10 @@ def test_handle_alert_opens_position_and_persists_state(tmp_path):
 
     state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
     assert state["open_positions"][0]["position"]["pair"] == "JUP/USDC"
+    assert state["positions"]["open"][0]["position"]["pair"] == "JUP/USDC"
     assert state["open_positions"][0]["meta"]["held_mint"] == JUP_MINT
     assert state["open_positions"][0]["meta"]["entry_amount_units"] == 123456
+    assert state["bot_config"]["enter_on"] == "down"
 
 
 def test_monitor_positions_auto_sells_and_clears_open_position(tmp_path):
@@ -272,6 +274,8 @@ def test_monitor_positions_locks_realized_profit_after_live_profitable_exit(tmp_
     state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
     assert state["closed_positions"][0]["realized_profit_sol"] == pytest.approx(0.05)
     assert state["closed_positions"][0]["locked_profit_sol"] == pytest.approx(0.025)
+    assert state["profit_tracking"]["realized_profit_sol"] == pytest.approx(0.05)
+    assert state["profit_tracking"]["locked_profit_sol"] == pytest.approx(0.025)
 
 
 def test_load_state_restores_positions_feed_history_and_trade_history(tmp_path):

@@ -5,7 +5,6 @@ using real-time Jupiter price data.
 """
 import math
 import time
-import json
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,7 +83,10 @@ class RiskManager:
         if balance["sol_price"] <= 0:
             print("Could not determine SOL price for position sizing")
             return None
-        tradable_sol = get_tradable_balance(balance.get("sol", 0.0))
+        tradable_sol = get_tradable_balance(
+            balance.get("sol", 0.0),
+            path=getattr(self, "state_path", None),
+        )
         max_sol = min(
             amount_sol,
             MAX_POSITION_USD / balance["sol_price"],
