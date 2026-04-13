@@ -1,13 +1,13 @@
 <div align="center">
 
 ```text
-██╗██╗   ██╗██████╗ ██╗████████╗███████╗██████╗ 
-██║██║   ██║██╔══██╗██║╚══██╔══╝██╔════╝██╔══██╗
-██║██║   ██║██████╔╝██║   ██║   █████╗  ██████╔╝
-██║██║   ██║██╔═══╝ ██║   ██║   ██╔══╝  ██╔══██╗
-██║╚██████╔╝██║     ██║   ██║   ███████╗██║  ██║
-╚═╝ ╚═════╝ ╚═╝     ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
-                                                
+     ██╗██╗   ██╗██████╗ ██╗████████╗███████╗██████╗ 
+     ██║██║   ██║██╔══██╗██║╚══██╔══╝██╔════╝██╔══██╗
+     ██║██║   ██║██████╔╝██║   ██║   █████╗  ██████╔╝
+██   ██║██║   ██║██╔═══╝ ██║   ██║   ██╔══╝  ██╔══██╗
+╚█████╔╝╚██████╔╝██║     ██║   ██║   ███████╗██║  ██║
+ ╚════╝  ╚═════╝ ╚═╝     ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
+                                                     
 ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗     
 ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║     
 ███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║     
@@ -23,6 +23,9 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](#)
+[![Jupiter API](https://img.shields.io/badge/Jupiter-API_V1-purple.svg?style=flat-square)](https://station.jup.ag/docs)
+[![Solana](https://img.shields.io/badge/Solana-Mainnet-green.svg?style=flat-square)](https://solana.com/)
+[![AI Agent](https://img.shields.io/badge/AI-Autonomous-orange.svg?style=flat-square)](#)
 
 </div>
 
@@ -36,11 +39,13 @@ This agent runs 24/7, monitors 5+ token pairs, detects volatility spikes, finds 
 
 ## 🏆 Why This Wins
 
-* **Zero-Cost Oracle:** By leveraging Jupiter's `quote` endpoint, we eliminated the need for paid price feeds. It's real-time, native, and inherently accurate to the exact liquidity pools we trade on.
-* **Invisible Arbitrage:** The bot maps 90+ DEXes via the program-label endpoint to detect cross-route discrepancies invisible to standard price aggregators.
-* **Self-Healing Volatility Scanners:** Adapts to market conditions dynamically. Small ticks are ignored; real momentum triggers execution.
-* **Complete Autonomous Execution:** From scanning to trailing-stop management, to signing and broadcasting transactions with auto-SOL wrapping, this agent requires zero human input.
-* **Pro-Grade Dashboards:** Beautiful rich terminal dashboards and a FastAPI-powered Web UI to visually track every algorithmic move.
+Jupiter Sentinel doesn't just trade on Solana; it deeply integrates with the Jupiter V1 API to extract asymmetric advantages that standard bots miss. Here is why this architecture dominates:
+
+* 🔮 **Zero-Cost Oracle Engine:** Standard bots pay for external oracles like Pyth or Chainlink. We bypassed this entirely by leveraging Jupiter's `quote` endpoint as a real-time, multi-pair price feed. It's native, zero-latency, and accurate to the exact liquidity pools we trade on.
+* 🕵️ **Invisible Arbitrage Mapping:** By utilizing the `/program-id-to-label` endpoint, the agent maps **90+ underlying DEXes** (including Raydium, Orca, Meteora, and obscure pools). This allows it to detect cross-route discrepancies completely invisible to standard price aggregators.
+* 🧠 **Self-Healing Volatility Scanners:** The agent dynamically adapts to market conditions. It calculates rolling volatility on the fly—ignoring small noise ticks and only triggering execution when real momentum is detected.
+* 🤖 **100% Autonomous Execution:** From continuous scanning and dynamic position sizing to trailing-stop management and auto-SOL wrapping, the entire lifecycle is handled without a single human click.
+* 🖥️ **Pro-Grade Visualization:** We ship with both a beautiful `rich` terminal dashboard and a FastAPI-powered Chart.js Web UI. You can visually track every algorithmic move, P&L shift, and arbitrage route in real time.
 
 ---
 
