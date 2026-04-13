@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, USDC_MINT, SOL_MINT
+from .validation import build_jupiter_quote_url
 
 
 @dataclass
@@ -37,12 +38,12 @@ class PriceFeed:
             else:
                 amount = 1_000_000  # 1 unit
             
-            url = (
-                f"{JUPITER_SWAP_V1}/quote?"
-                f"inputMint={self.input_mint}&"
-                f"outputMint={self.output_mint}&"
-                f"amount={amount}&"
-                f"slippageBps=50"
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                self.input_mint,
+                self.output_mint,
+                amount,
+                50,
             )
             
             req = urllib.request.Request(url, headers=HEADERS)
@@ -77,12 +78,12 @@ class PriceFeed:
     def _get_sol_price(self) -> Optional[float]:
         """Get SOL/USD price."""
         try:
-            url = (
-                f"{JUPITER_SWAP_V1}/quote?"
-                f"inputMint={SOL_MINT}&"
-                f"outputMint={USDC_MINT}&"
-                f"amount=1000000&"  # 0.001 SOL
-                f"slippageBps=50"
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                SOL_MINT,
+                USDC_MINT,
+                1_000_000,
+                50,
             )
             req = urllib.request.Request(url, headers=HEADERS)
             resp = json.loads(urllib.request.urlopen(req, timeout=10).read())

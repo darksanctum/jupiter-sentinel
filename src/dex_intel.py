@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SCAN_PAIRS, SOL_MINT, USDC_MINT
+from .validation import build_jupiter_quote_url
 
 
 @dataclass
@@ -56,10 +57,12 @@ class DexRouteIntel:
                       amount: int, slippage_bps: int = 50) -> Optional[RouteAnalysis]:
         """Get route analysis for a specific pair and amount."""
         try:
-            url = (
-                f"{JUPITER_SWAP_V1}/quote?"
-                f"inputMint={input_mint}&outputMint={output_mint}"
-                f"&amount={amount}&slippageBps={slippage_bps}"
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                input_mint,
+                output_mint,
+                amount,
+                slippage_bps,
             )
             req = urllib.request.Request(url, headers=HEADERS)
             resp = json.loads(urllib.request.urlopen(req, timeout=10).read())

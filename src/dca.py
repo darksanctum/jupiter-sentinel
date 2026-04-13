@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
+from .validation import build_jupiter_quote_url
 
 
 @dataclass
@@ -49,10 +50,12 @@ class DCABot:
 
     def get_quote(self, input_mint: str, output_mint: str, amount_lamports: int) -> Optional[dict]:
         try:
-            url = (
-                f"{JUPITER_SWAP_V1}/quote?"
-                f"inputMint={input_mint}&outputMint={output_mint}"
-                f"&amount={amount_lamports}&slippageBps=50"
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                input_mint,
+                output_mint,
+                amount_lamports,
+                50,
             )
             req = urllib.request.Request(url, headers=HEADERS)
             return json.loads(urllib.request.urlopen(req, timeout=10).read())

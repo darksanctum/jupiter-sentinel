@@ -3,8 +3,10 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 from datetime import datetime, timedelta
 import random
-from jinja2 import Template
+from jinja2 import Environment, select_autoescape
 from typing import Any, Dict
+
+from .validation import validate_host, validate_port
 
 app = FastAPI(title="Jupiter Sentinel Dashboard")
 
@@ -243,14 +245,23 @@ HTML_TEMPLATE = """
 </html>
 """
 
+_TEMPLATE_ENV = Environment(
+    autoescape=select_autoescape(
+        enabled_extensions=("html", "xml"),
+        default_for_string=True,
+    )
+)
+_DASHBOARD_TEMPLATE = _TEMPLATE_ENV.from_string(HTML_TEMPLATE)
+
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard() -> HTMLResponse:
     data = generate_mock_data()
-    template = Template(HTML_TEMPLATE)
-    html_content = template.render(data=data)
+    html_content = _DASHBOARD_TEMPLATE.render(data=data)
     return HTMLResponse(content=html_content)
 
 def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+    host = validate_host(host)
+    port = validate_port(port)
     print(f"Starting web dashboard on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
 

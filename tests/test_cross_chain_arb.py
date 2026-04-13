@@ -14,6 +14,9 @@ from src.cross_chain_arb import (
     RouteSpreadOpportunity,
 )
 
+VALID_INPUT_MINT = cross_chain_arb.SCAN_PAIRS[0][0]
+VALID_OUTPUT_MINT = cross_chain_arb.SCAN_PAIRS[0][1]
+
 
 class FakeResponse:
     def __init__(self, payload):
@@ -56,7 +59,7 @@ def test_get_quote_builds_request_and_parses_route_metadata(monkeypatch):
     )
     detector = CrossChainArbDetector(slippage_bps=75, quote_timeout=9)
 
-    quote = detector.get_quote("mint-in", "mint-out", 120)
+    quote = detector.get_quote(VALID_INPUT_MINT, VALID_OUTPUT_MINT, 120)
 
     assert quote is not None
     assert quote.amount == 120
@@ -71,17 +74,18 @@ def test_get_quote_builds_request_and_parses_route_metadata(monkeypatch):
     assert timeout == 9
     assert request.full_url == (
         f"{cross_chain_arb.JUPITER_SWAP_V1}/quote?"
-        f"inputMint=mint-in&"
-        f"outputMint=mint-out&"
+        f"inputMint={VALID_INPUT_MINT}&"
+        f"outputMint={VALID_OUTPUT_MINT}&"
         f"amount=120&"
         f"slippageBps=75&"
         f"onlyDirectRoutes=false&"
         f"asLegacyTransaction=false"
     )
-    assert dict(request.header_items()) == {
-        "User-agent": cross_chain_arb.HEADERS["User-Agent"],
-        "Content-type": cross_chain_arb.HEADERS["Content-Type"],
-    }
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["user-agent"] == cross_chain_arb.HEADERS["User-Agent"]
+    assert headers["content-type"] == cross_chain_arb.HEADERS["Content-Type"]
+    if "x-api-key" in cross_chain_arb.HEADERS:
+        assert headers["x-api-key"] == cross_chain_arb.HEADERS["x-api-key"]
 
 
 @pytest.mark.parametrize(
@@ -98,7 +102,7 @@ def test_get_quote_returns_none_on_invalid_quote_payload(monkeypatch, response):
     install_urlopen(monkeypatch, response)
     detector = CrossChainArbDetector()
 
-    assert detector.get_quote("mint-in", "mint-out", 100) is None
+    assert detector.get_quote(VALID_INPUT_MINT, VALID_OUTPUT_MINT, 100) is None
 
 
 def test_scan_pair_surfaces_spreads_only_for_different_route_paths(monkeypatch):

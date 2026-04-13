@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from datetime import datetime
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT, SCAN_PAIRS
+from .validation import build_jupiter_quote_url
 
 
 def detect_triangular_arb() -> List[Dict[str, Any]]:
@@ -23,7 +24,7 @@ def detect_triangular_arb() -> List[Dict[str, Any]]:
     
     # Get SOL/USDC rate
     try:
-        url = f"{JUPITER_SWAP_V1}/quote?inputMint={SOL_MINT}&outputMint={USDC_MINT}&amount=1000000&slippageBps=10"
+        url = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, USDC_MINT, 1_000_000, 10)
         req = urllib.request.Request(url, headers=HEADERS)
         resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
         sol_usdc = int(resp["outAmount"]) / 1e6 / 0.001  # USDC per SOL
@@ -46,13 +47,19 @@ def detect_triangular_arb() -> List[Dict[str, Any]]:
             
         try:
             # Leg 1: SOL -> Token (100k lamports)
-            url1 = f"{JUPITER_SWAP_V1}/quote?inputMint={SOL_MINT}&outputMint={token_mint}&amount=100000&slippageBps=10"
+            url1 = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, token_mint, 100_000, 10)
             req1 = urllib.request.Request(url1, headers=HEADERS)
             resp1 = json.loads(urllib.request.urlopen(req1, timeout=10).read())
             sol_to_token = int(resp1["outAmount"])
             
             # Leg 2: Token -> USDC
-            url2 = f"{JUPITER_SWAP_V1}/quote?inputMint={token_mint}&outputMint={USDC_MINT}&amount={sol_to_token}&slippageBps=10"
+            url2 = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                token_mint,
+                USDC_MINT,
+                sol_to_token,
+                10,
+            )
             req2 = urllib.request.Request(url2, headers=HEADERS)
             resp2 = json.loads(urllib.request.urlopen(req2, timeout=10).read())
             token_to_usdc = int(resp2["outAmount"]) / 1e6

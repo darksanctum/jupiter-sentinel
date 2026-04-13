@@ -3,6 +3,7 @@ Jupiter Sentinel - Risk Manager
 Manages position sizing, stop-losses, and trailing stops
 using real-time Jupiter price data.
 """
+import math
 import time
 import json
 from typing import Any, Dict, List, Optional
@@ -68,8 +69,20 @@ class RiskManager:
         Calculates max position size based on current balance
         and volatility-adjusted risk limits.
         """
+        if not math.isfinite(amount_sol) or amount_sol <= 0:
+            raise ValueError("amount_sol must be a positive finite number")
+        if stop_loss_pct is not None and (not math.isfinite(stop_loss_pct) or stop_loss_pct <= 0 or stop_loss_pct >= 1):
+            raise ValueError("stop_loss_pct must be a finite decimal between 0 and 1")
+        if take_profit_pct is not None and (
+            not math.isfinite(take_profit_pct) or take_profit_pct <= 0 or take_profit_pct >= 1
+        ):
+            raise ValueError("take_profit_pct must be a finite decimal between 0 and 1")
+
         # Check balance
         balance = self.executor.get_balance()
+        if balance["sol_price"] <= 0:
+            print("Could not determine SOL price for position sizing")
+            return None
         max_sol = min(
             amount_sol,
             MAX_POSITION_USD / balance["sol_price"],

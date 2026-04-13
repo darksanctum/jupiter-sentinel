@@ -27,11 +27,12 @@ from .config import (
     JUPITER_SWAP_V1, HEADERS, RPC_URL, SOL_MINT, USDC_MINT,
     SCAN_PAIRS, load_keypair,
 )
+from .validation import build_jupiter_quote_url
 
 
 def get_sol_price() -> Optional[float]:
     try:
-        url = f"{JUPITER_SWAP_V1}/quote?inputMint={SOL_MINT}&outputMint={USDC_MINT}&amount=1000000&slippageBps=10"
+        url = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, USDC_MINT, 1_000_000, 10)
         req = urllib.request.Request(url, headers=HEADERS)
         resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
         return int(resp["outAmount"]) / 1e6 / 0.001
@@ -164,7 +165,7 @@ def fetch_real_routes() -> None:
         ]
         new_routes = []
         for i, (in_sym, out_sym, in_mint, out_mint, amt) in enumerate(pairs, 1):
-            url = f"{JUPITER_SWAP_V1}/quote?inputMint={in_mint}&outputMint={out_mint}&amount={amt}&slippageBps=50"
+            url = build_jupiter_quote_url(JUPITER_SWAP_V1, in_mint, out_mint, amt, 50)
             req = urllib.request.Request(url, headers=HEADERS)
             resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
             plan = resp.get("routePlan", [])

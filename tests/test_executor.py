@@ -10,6 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import src.executor as executor
 from src.executor import TradeExecutor
 
+VALID_INPUT_MINT = executor.SOL_MINT
+VALID_OUTPUT_MINT = executor.USDC_MINT
+VALID_ALT_MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+
 
 class FakeResponse:
     def __init__(self, payload):
@@ -84,7 +88,7 @@ def test_get_quote_builds_request_and_parses_response(monkeypatch):
     calls = install_urlopen(monkeypatch, {"outAmount": "12345", "routePlan": []})
     trade_executor = make_executor(monkeypatch)
 
-    quote = trade_executor.get_quote("mint-in", "mint-out", 42, slippage_bps=75)
+    quote = trade_executor.get_quote(VALID_INPUT_MINT, VALID_OUTPUT_MINT, 42, slippage_bps=75)
 
     assert quote == {"outAmount": "12345", "routePlan": []}
 
@@ -92,17 +96,18 @@ def test_get_quote_builds_request_and_parses_response(monkeypatch):
     assert timeout == 15
     assert request.full_url == (
         f"{executor.JUPITER_SWAP_V1}/quote?"
-        f"inputMint=mint-in&"
-        f"outputMint=mint-out&"
+        f"inputMint={VALID_INPUT_MINT}&"
+        f"outputMint={VALID_OUTPUT_MINT}&"
         f"amount=42&"
         f"slippageBps=75&"
         f"onlyDirectRoutes=false&"
         f"asLegacyTransaction=false"
     )
-    assert dict(request.header_items()) == {
-        "User-agent": executor.HEADERS["User-Agent"],
-        "Content-type": executor.HEADERS["Content-Type"],
-    }
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["user-agent"] == executor.HEADERS["User-Agent"]
+    assert headers["content-type"] == executor.HEADERS["Content-Type"]
+    if "x-api-key" in executor.HEADERS:
+        assert headers["x-api-key"] == executor.HEADERS["x-api-key"]
 
 
 def test_execute_swap_returns_failed_when_quote_is_missing(monkeypatch):
@@ -132,7 +137,7 @@ def test_execute_swap_dry_run_calculates_sol_output_usd_value(monkeypatch):
 
     monkeypatch.setattr(trade_executor, "get_quote", fake_get_quote)
 
-    result = trade_executor.execute_swap("jup-mint", executor.SOL_MINT, 1_000_000, dry_run=True)
+    result = trade_executor.execute_swap(VALID_ALT_MINT, executor.SOL_MINT, 1_000_000, dry_run=True)
 
     assert result["status"] == "dry_run"
     assert result["out_amount"] == 2_000_000_000
@@ -140,7 +145,7 @@ def test_execute_swap_dry_run_calculates_sol_output_usd_value(monkeypatch):
     assert result["route_plan"] == [{"swapInfo": "main-route"}]
     assert result["out_usd"] == pytest.approx(300.0)
     assert calls == [
-        ("jup-mint", executor.SOL_MINT, 1_000_000, 300),
+        (VALID_ALT_MINT, executor.SOL_MINT, 1_000_000, 300),
         (executor.SOL_MINT, executor.USDC_MINT, 1_000_000, 50),
     ]
     assert trade_executor.trade_history == []
@@ -207,9 +212,10 @@ def test_execute_swap_success_signs_and_broadcasts_transaction(monkeypatch):
             {"encoding": "base58", "skipPreflight": True},
         ],
     }
-    assert dict(rpc_request.header_items()) == {
-        "Content-type": "application/json",
-        "User-agent": "Mozilla/5.0",
+    rpc_headers = {key.lower(): value for key, value in rpc_request.header_items()}
+    assert rpc_headers == {
+        "content-type": "application/json",
+        "user-agent": "Mozilla/5.0",
     }
 
 
@@ -280,4 +286,23 @@ def test_get_balance_returns_sol_and_usd_values(monkeypatch):
         "id": 1,
         "method": "getBalance",
         "params": ["fake-pubkey"],
+    }
+
+
+def test_get_balance_returns_unconfigured_wallet_when_keys_are_missing(monkeypatch):
+    monkeypatch.setattr(executor, "get_pubkey", lambda: (_ for _ in ()).throw(RuntimeError("missing wallet")))
+    trade_executor = TradeExecutor()
+    monkeypatch.setattr(
+        trade_executor,
+        "get_quote",
+        lambda *args, **kwargs: {"outAmount": "160000"},
+    )
+
+    balance = trade_executor.get_balance()
+
+    assert balance == {
+        "sol": 0.0,
+        "usd_value": 0.0,
+        "sol_price": pytest.approx(160.0),
+        "address": "unconfigured",
     }

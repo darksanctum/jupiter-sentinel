@@ -3,7 +3,6 @@ Jupiter Sentinel - Trade Executor
 Executes swaps via Jupiter Swap V1 API with risk management.
 """
 import json
-import time
 import urllib.request
 import base58
 from typing import Any, Optional
@@ -11,8 +10,9 @@ from datetime import datetime
 
 from .config import (
     JUPITER_SWAP_V1, HEADERS, RPC_URL,
-    SOL_MINT, USDC_MINT, load_keypair
+    SOL_MINT, USDC_MINT, get_pubkey, load_keypair
 )
+from .validation import build_jupiter_quote_url
 
 
 class TradeExecutor:
@@ -22,9 +22,22 @@ class TradeExecutor:
     """
     
     def __init__(self) -> None:
-        self.keypair = load_keypair()
-        self.pubkey = str(self.keypair.pubkey())
+        self.keypair = None
+        self.pubkey = ""
         self.trade_history: list[dict[str, Any]] = []
+
+        try:
+            self.pubkey = get_pubkey()
+        except RuntimeError:
+            # Allow dry-run and read-only workflows to start without a private key.
+            self.pubkey = ""
+
+    def _ensure_keypair(self) -> Any:
+        """Load the signing keypair only when a live swap needs it."""
+        if self.keypair is None:
+            self.keypair = load_keypair()
+            self.pubkey = str(self.keypair.pubkey())
+        return self.keypair
     
     def get_quote(
         self,
@@ -34,14 +47,14 @@ class TradeExecutor:
         slippage_bps: int = 300,
     ) -> Optional[dict[str, Any]]:
         """Get a swap quote from Jupiter."""
-        url = (
-            f"{JUPITER_SWAP_V1}/quote?"
-            f"inputMint={input_mint}&"
-            f"outputMint={output_mint}&"
-            f"amount={amount}&"
-            f"slippageBps={slippage_bps}&"
-            f"onlyDirectRoutes=false&"
-            f"asLegacyTransaction=false"
+        url = build_jupiter_quote_url(
+            JUPITER_SWAP_V1,
+            input_mint,
+            output_mint,
+            amount,
+            slippage_bps,
+            only_direct_routes=False,
+            as_legacy_transaction=False,
         )
         
         req = urllib.request.Request(url, headers=HEADERS)
@@ -107,6 +120,8 @@ class TradeExecutor:
                 print(f"[DRY RUN] {amount/1e9:.6f} -> {out_amount} (impact: {price_impact:.2f}%)")
                 return result
             
+            keypair = self._ensure_keypair()
+
             # 2. Get swap transaction
             swap_url = f"{JUPITER_SWAP_V1}/swap"
             swap_data = json.dumps({
@@ -124,7 +139,7 @@ class TradeExecutor:
             tx_bytes = base58.b58decode(swap_resp["swapTransaction"])
             from solders.transaction import VersionedTransaction
             tx = VersionedTransaction.from_bytes(tx_bytes)
-            signed_tx = VersionedTransaction(tx.message, [self.keypair])
+            signed_tx = VersionedTransaction(tx.message, [keypair])
             
             # 4. Broadcast
             encoded = base58.b58encode(bytes(signed_tx)).decode()
@@ -165,6 +180,23 @@ class TradeExecutor:
     
     def get_balance(self) -> dict[str, Any]:
         """Get wallet SOL balance."""
+        if not self.pubkey:
+            try:
+                self.pubkey = get_pubkey()
+            except RuntimeError:
+                self.pubkey = ""
+
+        quote = self.get_quote(SOL_MINT, USDC_MINT, 1_000_000, 50)
+        sol_price = int(quote["outAmount"]) / 1e6 / 0.001 if quote else 0
+
+        if not self.pubkey:
+            return {
+                "sol": 0.0,
+                "usd_value": 0.0,
+                "sol_price": sol_price,
+                "address": "unconfigured",
+            }
+
         rpc_body = json.dumps({
             "jsonrpc": "2.0",
             "id": 1,
@@ -180,10 +212,6 @@ class TradeExecutor:
         resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
         
         sol_balance = resp.get("result", {}).get("value", 0) / 1e9
-        
-        # Get USD value
-        quote = self.get_quote(SOL_MINT, USDC_MINT, 1_000_000, 50)
-        sol_price = int(quote["outAmount"]) / 1e6 / 0.001 if quote else 0
         
         return {
             "sol": sol_balance,

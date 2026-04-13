@@ -10,6 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import src.oracle as oracle
 from src.oracle import PriceFeed, PricePoint
 
+VALID_ALT_MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+VALID_OTHER_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+
 
 class FakeResponse:
     def __init__(self, payload):
@@ -37,7 +40,7 @@ def install_urlopen(monkeypatch, *responses):
 
 
 def make_feed(*prices):
-    feed = PriceFeed("TEST/PAIR", "input-mint", "output-mint")
+    feed = PriceFeed("TEST/PAIR", VALID_ALT_MINT, VALID_OTHER_MINT)
     for index, price in enumerate(prices):
         feed.history.append(PricePoint(timestamp=float(index), price=price))
     return feed
@@ -63,16 +66,17 @@ def test_fetch_price_parses_sol_to_usdc_quote_and_records_history(monkeypatch):
         f"amount=1000000&"
         f"slippageBps=50"
     )
-    assert dict(request.header_items()) == {
-        "User-agent": oracle.HEADERS["User-Agent"],
-        "Content-type": oracle.HEADERS["Content-Type"],
-    }
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["user-agent"] == oracle.HEADERS["User-Agent"]
+    assert headers["content-type"] == oracle.HEADERS["Content-Type"]
+    if "x-api-key" in oracle.HEADERS:
+        assert headers["x-api-key"] == oracle.HEADERS["x-api-key"]
 
 
 def test_fetch_price_parses_non_sol_quote_to_usdc(monkeypatch):
     install_urlopen(monkeypatch, {"outAmount": "2500000"})
 
-    feed = PriceFeed("JUP/USDC", "jup-mint", oracle.USDC_MINT)
+    feed = PriceFeed("JUP/USDC", VALID_ALT_MINT, oracle.USDC_MINT)
     point = feed.fetch_price()
 
     assert point is not None
@@ -83,7 +87,7 @@ def test_fetch_price_converts_sol_output_using_sol_usd_lookup(monkeypatch):
     install_urlopen(monkeypatch, {"outAmount": "20000000"})
     monkeypatch.setattr(PriceFeed, "_get_sol_price", lambda self: 150.0)
 
-    feed = PriceFeed("JUP/SOL", "jup-mint", oracle.SOL_MINT)
+    feed = PriceFeed("JUP/SOL", VALID_ALT_MINT, oracle.SOL_MINT)
     point = feed.fetch_price()
 
     assert point is not None
@@ -94,7 +98,7 @@ def test_fetch_price_returns_zero_price_when_sol_usd_lookup_fails(monkeypatch):
     install_urlopen(monkeypatch, {"outAmount": "20000000"})
     monkeypatch.setattr(PriceFeed, "_get_sol_price", lambda self: None)
 
-    feed = PriceFeed("JUP/SOL", "jup-mint", oracle.SOL_MINT)
+    feed = PriceFeed("JUP/SOL", VALID_ALT_MINT, oracle.SOL_MINT)
     point = feed.fetch_price()
 
     assert point is not None
@@ -105,7 +109,7 @@ def test_fetch_price_returns_zero_price_when_sol_usd_lookup_fails(monkeypatch):
 def test_fetch_price_uses_default_decimal_normalization_for_other_outputs(monkeypatch):
     install_urlopen(monkeypatch, {"outAmount": "1234567"})
 
-    feed = PriceFeed("TOKEN/OTHER", "token-a", "token-b")
+    feed = PriceFeed("TOKEN/OTHER", VALID_ALT_MINT, VALID_OTHER_MINT)
     point = feed.fetch_price()
 
     assert point is not None
@@ -135,7 +139,7 @@ def test_fetch_price_returns_none_and_preserves_history_on_errors(monkeypatch, r
 
 def test_get_sol_price_parses_quote_response(monkeypatch):
     calls = install_urlopen(monkeypatch, {"outAmount": "150000"})
-    feed = PriceFeed("JUP/SOL", "jup-mint", oracle.SOL_MINT)
+    feed = PriceFeed("JUP/SOL", VALID_ALT_MINT, oracle.SOL_MINT)
 
     price = feed._get_sol_price()
 
@@ -158,7 +162,7 @@ def test_get_sol_price_parses_quote_response(monkeypatch):
 )
 def test_get_sol_price_returns_none_on_errors(monkeypatch, response):
     install_urlopen(monkeypatch, response)
-    feed = PriceFeed("JUP/SOL", "jup-mint", oracle.SOL_MINT)
+    feed = PriceFeed("JUP/SOL", VALID_ALT_MINT, oracle.SOL_MINT)
 
     assert feed._get_sol_price() is None
 

@@ -3,17 +3,16 @@ Jupiter Sentinel - Configuration
 """
 import os
 import json
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .validation import validate_solana_address
 
 if TYPE_CHECKING:
     from solders.keypair import Keypair
 
 # Wallet
-SOLANA_KEY_PATH = os.environ.get(
-    "SOLANA_PRIVATE_KEY_PATH",
-    os.path.expanduser("~/.clawd/secrets/SOLANA_SHADOW_001_KEY")
-)
 RPC_URL = "https://api.mainnet-beta.solana.com"
 
 # Jupiter API
@@ -52,24 +51,65 @@ LOGS_DIR = PROJECT_DIR / "logs"
 DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Headers
-HEADERS = {
-    "User-Agent": "JupiterSentinel/1.0",
-    "Content-Type": "application/json",
-}
+def _build_headers() -> dict[str, str]:
+    headers = {
+        "User-Agent": "JupiterSentinel/1.0",
+        "Content-Type": "application/json",
+    }
+
+    api_key = os.environ.get("JUP_API_KEY", "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    return headers
+
+
+HEADERS = _build_headers()
+
+
+def _get_private_key_path() -> Path:
+    raw_path = os.environ.get("SOLANA_PRIVATE_KEY_PATH", "").strip()
+    if not raw_path:
+        raise RuntimeError(
+            "SOLANA_PRIVATE_KEY_PATH is required for signing transactions. "
+            "Use SOLANA_PUBLIC_KEY for read-only wallet access."
+        )
+
+    path = Path(raw_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"Private key file does not exist: {path}")
+    if not path.is_file():
+        raise ValueError(f"Private key path is not a file: {path}")
+
+    if os.name != "nt":
+        mode = stat.S_IMODE(path.stat().st_mode)
+        if mode & 0o077:
+            raise PermissionError(
+                "Private key file permissions are too open. Restrict access with chmod 600."
+            )
+
+    return path
 
 
 def load_keypair() -> "Keypair":
     """Load Solana keypair from file."""
     from solders.keypair import Keypair
-    
-    with open(SOLANA_KEY_PATH) as f:
-        key_bytes = json.loads(f.read())
-    
+
+    with _get_private_key_path().open(encoding="utf-8") as handle:
+        key_bytes = json.load(handle)
+
+    if not isinstance(key_bytes, list) or len(key_bytes) != 64:
+        raise ValueError("Private key file must contain a 64-byte JSON array")
+    if any(not isinstance(value, int) or value < 0 or value > 255 for value in key_bytes):
+        raise ValueError("Private key file must contain only integer byte values between 0 and 255")
+
     return Keypair.from_bytes(bytes(key_bytes))
 
 
 def get_pubkey() -> str:
-    """Get wallet public key without loading full keypair."""
+    """Get wallet public key from a public env var or the configured keypair."""
+    configured_pubkey = os.environ.get("SOLANA_PUBLIC_KEY", "").strip()
+    if configured_pubkey:
+        return validate_solana_address(configured_pubkey, "SOLANA_PUBLIC_KEY")
+
     kp = load_keypair()
-    return str(kp.pubkey())
+    return validate_solana_address(str(kp.pubkey()), "wallet_pubkey")

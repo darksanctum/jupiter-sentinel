@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
+from .validation import build_jupiter_quote_url
 
 
 @dataclass
@@ -55,13 +56,13 @@ class RouteArbitrage:
         
         for amount in amounts:
             try:
-                url = (
-                    f"{JUPITER_SWAP_V1}/quote?"
-                    f"inputMint={input_mint}&"
-                    f"outputMint={output_mint}&"
-                    f"amount={amount}&"
-                    f"slippageBps=50&"
-                    f"onlyDirectRoutes=false"
+                url = build_jupiter_quote_url(
+                    JUPITER_SWAP_V1,
+                    input_mint,
+                    output_mint,
+                    amount,
+                    50,
+                    only_direct_routes=False,
                 )
                 req = urllib.request.Request(url, headers=HEADERS)
                 resp = json.loads(urllib.request.urlopen(req, timeout=10).read())

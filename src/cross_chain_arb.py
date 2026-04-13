@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Iterable, Optional
 
 from .config import HEADERS, JUPITER_SWAP_V1, SCAN_PAIRS
+from .validation import build_jupiter_quote_url
 
 
 DEFAULT_AMOUNTS = [
@@ -87,17 +88,16 @@ class CrossChainArbDetector:
         amount: int,
     ) -> Optional[RouteQuote]:
         """Fetch and normalize a Jupiter quote for one trade size."""
-        url = (
-            f"{JUPITER_SWAP_V1}/quote?"
-            f"inputMint={input_mint}&"
-            f"outputMint={output_mint}&"
-            f"amount={amount}&"
-            f"slippageBps={self.slippage_bps}&"
-            f"onlyDirectRoutes=false&"
-            f"asLegacyTransaction=false"
-        )
-
         try:
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                input_mint,
+                output_mint,
+                amount,
+                self.slippage_bps,
+                only_direct_routes=False,
+                as_legacy_transaction=False,
+            )
             req = urllib.request.Request(url, headers=HEADERS)
             payload = json.loads(urllib.request.urlopen(req, timeout=self.quote_timeout).read())
             out_amount = int(payload["outAmount"])

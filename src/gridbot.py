@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT, load_keypair
+from .validation import build_jupiter_quote_url
 
 
 @dataclass
@@ -46,10 +47,12 @@ class GridBot:
     def get_current_price(self, input_mint: str, output_mint: str) -> Optional[float]:
         """Get current price via Jupiter quote."""
         try:
-            url = (
-                f"{JUPITER_SWAP_V1}/quote?"
-                f"inputMint={input_mint}&outputMint={output_mint}"
-                f"&amount=1000000&slippageBps=10"
+            url = build_jupiter_quote_url(
+                JUPITER_SWAP_V1,
+                input_mint,
+                output_mint,
+                1_000_000,
+                10,
             )
             req = urllib.request.Request(url, headers=HEADERS)
             resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
