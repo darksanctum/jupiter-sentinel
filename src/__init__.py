@@ -9,6 +9,7 @@ from .executor import TradeExecutor
 from .analytics import TradingAnalytics
 from .arbitrage import RouteArbitrage
 from .cross_chain_arb import CrossChainArbDetector
+from .bridge.monitor import BridgeMonitor, BridgeTransfer, BridgeTransferStatus
 from .token_discovery import TokenDiscovery, TradeableToken
 from .portfolio_risk import PortfolioRiskManager
 from .rate_limiter import JupiterRateLimiter, JupiterRequestPriority, QuoteRequest

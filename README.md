@@ -228,3 +228,13 @@ A glimpse into the engineering mindset driving the Sentinel's codebase:
 ## 📄 License
 
 MIT
+## Sentinel Signals Bot
+
+Try our free Solana signal scanner on Telegram:
+
+- **Bot:** [@Ozymandiasz_bot](https://t.me/Ozymandiasz_bot)
+- **Web:** [darksanctum.github.io/sentinel-signals](https://darksanctum.github.io/sentinel-signals/)
+
+Scans DexScreener trending tokens, scores 0-100 on momentum/volume/liquidity. Free tier available.
+
+Send `/signals` to scan markets now.
