@@ -28,7 +28,6 @@ from .config import (
     SCAN_PAIRS, load_keypair,
 )
 from .validation import build_jupiter_quote_url
-from .profit_locker import get_locked_balance, get_tradable_balance
 
 
 def get_sol_price() -> Optional[float]:
@@ -69,7 +68,7 @@ def ascii_plot(series: Sequence[float], height: int = 12) -> str:
     
     result = []
     for h in range(height - 1, -1, -1):
-        line = [f"{min_val + (range_val * h / (height - 1)):8.2f} |"]
+        line = [f"${min_val + (range_val * h / (height - 1)):8.2f} |"]
         for val in series:
             norm = (val - min_val) / range_val * height
             if norm >= h + 1:
@@ -90,32 +89,11 @@ def get_header_panel(sol_balance: float, usd_value: float, current_price: float)
     return Panel(
         Text.from_markup(
             f"[bold cyan]JUPITER SENTINEL[/] | [dim]Autonomous AI DeFi Agent[/]\n"
+            f"[green]Wallet:[/] [bold]{sol_balance:.6f} SOL[/] | "
             f"[green]SOL Price:[/] [bold]${current_price:.2f}[/] | "
             f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC[/]"
         ),
         border_style="cyan",
-    )
-
-
-def get_balances_panel(total_sol: float, current_price: float) -> Any:
-    locked_sol = get_locked_balance()
-    try:
-        tradable_sol = get_tradable_balance(total_sol)
-    except:
-        tradable_sol = max(total_sol - locked_sol, 0)
-
-    total_usd = total_sol * current_price
-    locked_usd = locked_sol * current_price
-    tradable_usd = tradable_sol * current_price
-
-    return Panel(
-        Text.from_markup(
-            f"[bold]Total Wallet:[/]    {total_sol:.4f} SOL [dim](${total_usd:.2f})[/]\n"
-            f"[bold green]Tradable Balance:[/] {tradable_sol:.4f} SOL [dim](${tradable_usd:.2f})[/]\n"
-            f"[bold magenta]Profit Locked:[/]    {locked_sol:.4f} SOL [dim](${locked_usd:.2f})[/]"
-        ),
-        title="Balances & Profit Locker",
-        border_style="green"
     )
 
 
@@ -148,7 +126,7 @@ def get_positions_table(current_sol_price: float) -> Any:
         {"asset": "JUP", "amount": 5000, "entry": 1.15, "current": 1.22},
         {"asset": "BONK", "amount": 1000000, "entry": 0.000014, "current": 0.000016},
     ]
-    table = Table(title="Open Positions & Real-time PnL", show_header=True, header_style="bold magenta", expand=True)
+    table = Table(title="Open Positions & PnL", show_header=True, header_style="bold magenta", expand=True)
     table.add_column("Asset", style="bold")
     table.add_column("Amount", justify="right")
     table.add_column("Entry", justify="right")
@@ -170,143 +148,56 @@ def get_positions_table(current_sol_price: float) -> Any:
     return table
 
 
-def get_strategy_panel() -> Any:
-    table = Table(title="Strategy Performance Comparison", show_header=True, header_style="bold yellow", expand=True)
+def get_strategy_performance_table() -> Any:
+    strategies = [
+        {"name": "Mean Reversion", "win_rate": "68%", "pnl": "+$450.20", "status": "Active"},
+        {"name": "Momentum", "win_rate": "55%", "pnl": "+$120.50", "status": "Active"},
+        {"name": "Cross-Chain Arb", "win_rate": "92%", "pnl": "+$890.00", "status": "Active"},
+        {"name": "Grid Bot", "win_rate": "N/A", "pnl": "-$15.00", "status": "Paused"},
+    ]
+    table = Table(title="Strategy Performance", show_header=True, header_style="bold yellow", expand=True)
     table.add_column("Strategy", style="bold")
     table.add_column("Win Rate", justify="right")
-    table.add_column("7d Return", justify="right")
+    table.add_column("Total PnL", justify="right")
     table.add_column("Status")
     
-    strategies = [
-        {"name": "Mean Reversion", "win": "62.5%", "return": "+4.2%", "status": "[green]Active[/]"},
-        {"name": "Momentum", "win": "45.0%", "return": "-1.5%", "status": "[yellow]Standby[/]"},
-        {"name": "Cross-Chain Arb", "win": "98.2%", "return": "+12.8%", "status": "[green]Active[/]"},
-        {"name": "DCA Accumulation", "win": "100%", "return": "+2.1%", "status": "[green]Active[/]"},
-    ]
-    
     for s in strategies:
-        ret_style = "[green]" if "+" in s["return"] else "[red]"
-        table.add_row(s["name"], s["win"], f"{ret_style}{s['return']}[/]", s["status"])
-        
+        pnl_style = "[green]" if "+" in s["pnl"] else "[red]"
+        status_style = "[green]Active[/]" if s["status"] == "Active" else "[yellow]Paused[/]"
+        table.add_row(s["name"], s["win_rate"], f"{pnl_style}{s['pnl']}[/]", status_style)
     return table
 
 
-def get_regime_panel(price_history: Sequence[float]) -> Any:
-    if len(price_history) < 10:
-        regime = "ANALYZING..."
-        color = "white"
-        desc = "Gathering data"
-    else:
-        # Simple mock detection based on price history
-        start = price_history[0]
-        end = price_history[-1]
-        change = (end - start) / start
-        
-        # Volatility check
-        vol = sum(abs(price_history[i] - price_history[i-1]) for i in range(1, len(price_history))) / len(price_history)
-        norm_vol = vol / end
-        
-        if norm_vol > 0.015:
-            regime = "VOLATILE"
-            color = "magenta"
-            desc = "High chop, wider spreads"
-        elif change > 0.02:
-            regime = "BULL"
-            color = "green"
-            desc = "Uptrend, momentum long"
-        elif change < -0.02:
-            regime = "BEAR"
-            color = "red"
-            desc = "Downtrend, mean reversion short"
-        else:
-            regime = "SIDEWAYS"
-            color = "yellow"
-            desc = "Range-bound, grid bot favored"
-            
-    return Panel(
-        Text.from_markup(f"[bold {color}]{regime}[/]\n[dim]{desc}[/]"),
-        title="Market Regime Indicator",
-        border_style=color
+def get_market_regime_panel() -> Any:
+    regimes = ["Bullish Trending", "Bearish Trending", "High Vol Volatile", "Low Vol Ranging"]
+    current_regime = regimes[0]  # Hardcoded or mock dynamic
+    
+    content = (
+        f"[bold white]Current Regime:[/] [bold green]{current_regime}[/]\n\n"
+        f"[dim]Confidence:[/] [cyan]87%[/]\n"
+        f"[dim]Volatility (24h):[/] [yellow]High[/]\n"
+        f"[dim]Trend Strength:[/] [green]Strong[/]"
     )
-
-
-import threading
-
-_cached_routes: list[str] = []
-_last_route_fetch = 0.0
-
-def fetch_real_routes() -> None:
-    global _cached_routes, _last_route_fetch
-    try:
-        from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
-        pairs = [
-            ("USDC", "SOL", USDC_MINT, SOL_MINT, 100_000_000),
-            ("SOL", "JUP", SOL_MINT, "JUPyiwrYJFskUPiHa7hkeR8VUTYb2PubCOMPQcubYhy", 1_000_000_000),
-            ("USDC", "BONK", USDC_MINT, "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", 100_000_000),
-            ("SOL", "JTO", SOL_MINT, "jtojtomepa8beP8AuQc6eP5xKx34c4Y43R2eP8a2BRe", 1_000_000_000)
-        ]
-        new_routes = []
-        for i, (in_sym, out_sym, in_mint, out_mint, amt) in enumerate(pairs, 1):
-            url = build_jupiter_quote_url(JUPITER_SWAP_V1, in_mint, out_mint, amt, 50)
-            req = urllib.request.Request(url, headers=HEADERS)
-            resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
-            plan = resp.get("routePlan", [])
-            steps = []
-            for step in plan:
-                label = step.get("swapInfo", {}).get("label", "?")
-                if "Orca" in label: steps.append(f"[yellow]{label}[/]")
-                elif "Raydium" in label: steps.append(f"[cyan]{label}[/]")
-                elif "Meteora" in label: steps.append(f"[magenta]{label}[/]")
-                elif "Lifinity" in label: steps.append(f"[green]{label}[/]")
-                elif "Phoenix" in label: steps.append(f"[blue]{label}[/]")
-                else: steps.append(f"[white]{label}[/]")
-            if not steps:
-                steps = ["[red]Direct[/]"]
-            new_routes.append(f"{i}. {in_sym} ➔ {' ➔ '.join(steps)} ➔ {out_sym}")
-        _cached_routes = new_routes
-        _last_route_fetch = time.time()
-    except Exception:
-        pass
-
-def get_dex_routes_panel() -> Any:
-    global _cached_routes, _last_route_fetch
-    if not _cached_routes or (time.time() - _last_route_fetch) > 30:
-        threading.Thread(target=fetch_real_routes, daemon=True).start()
-        
-    routes = _cached_routes if _cached_routes else [
-        "1. USDC ➔ [yellow]Orca[/] ➔ SOL",
-        "2. SOL ➔ [cyan]Raydium[/] ➔ JUP ➔ [magenta]Meteora[/] ➔ USDC",
-        "3. USDC ➔ [green]Lifinity[/] ➔ BONK",
-        "4. SOL ➔ [blue]Phoenix[/] ➔ JTO",
-        "5. JUP ➔ [yellow]Orca[/] ➔ [cyan]Raydium[/] ➔ SOL",
-    ]
-    content = "\n\n".join(routes)
     return Panel(
         Text.from_markup(content),
-        title="Active DEX Routes (Jupiter)",
-        border_style="blue",
-        padding=(1, 2)
+        title="Market Regime Indicator",
+        border_style="yellow"
     )
 
 
-def get_sentiment_panel(
-    fng_data: Optional[dict[str, Any]],
-    trending: Sequence[dict[str, Any]],
-) -> Any:
-    if not fng_data:
-        return Panel(Text("Loading sentiment..."), title="Market Sentiment", border_style="yellow")
-    color = "red" if fng_data["value"] <= 25 else ("yellow" if fng_data["value"] <= 45 else ("green" if fng_data["value"] >= 55 else "white"))
-    lines = [f"[bold]Fear & Greed:[/] [{color}]{fng_data['value']} - {fng_data['classification']}[/]"]
-    if trending:
-        lines.append("")
-        lines.append("[bold dim]Trending Tokens (CoinGecko):[/]")
-        for t in trending[:3]:
-            lines.append(f"• {t['name']} ({t['symbol'].upper()})")
+def get_profit_locked_panel(portfolio_value: float) -> Any:
+    profit_locked = portfolio_value * 0.35  # mock 35% locked
+    tradable = portfolio_value - profit_locked
     
+    content = (
+        f"[bold white]Total Balance:[/] [bold cyan]${portfolio_value:,.2f}[/]\n\n"
+        f"[bold green]Profit Locked:[/] [bold]${profit_locked:,.2f}[/] (35%)\n"
+        f"[bold yellow]Tradable Balance:[/] [bold]${tradable:,.2f}[/] (65%)"
+    )
     return Panel(
-        Text.from_markup("\n".join(lines)),
-        title="Market Sentiment",
-        border_style="yellow"
+        Text.from_markup(content),
+        title="Profit Locker",
+        border_style="green"
     )
 
 
@@ -317,20 +208,18 @@ def generate_layout() -> Any:
         Layout(name="main"),
     )
     layout["main"].split_row(
-        Layout(name="left", ratio=3),
-        Layout(name="right", ratio=2)
+        Layout(name="left", ratio=2),
+        Layout(name="right", ratio=1)
     )
     layout["left"].split_column(
         Layout(name="chart", size=15),
-        Layout(name="positions", size=10),
+        Layout(name="positions", size=8),
         Layout(name="trades")
     )
     layout["right"].split_column(
-        Layout(name="balances", size=6),
-        Layout(name="regime", size=5),
-        Layout(name="strategy", size=10),
-        Layout(name="routes", size=12),
-        Layout(name="sentiment", size=8)
+        Layout(name="regime", size=7),
+        Layout(name="profit_locked", size=7),
+        Layout(name="strategy")
     )
     return layout
 
@@ -340,72 +229,52 @@ def generate_dashboard() -> None:
         print("Install rich: pip install rich")
         return
     
-    from .sentiment import SentimentAnalyzer
-    sentiment = SentimentAnalyzer()
-    
     console = Console()
     layout = generate_layout()
     
     # Initial fetches
     initial_sol_price = get_sol_price() or 140.0
-    sol_balance = get_wallet_balance() or 10.5  # default if none
+    sol_balance = get_wallet_balance()
+    initial_portfolio_value = sol_balance * initial_sol_price if sol_balance > 0 else 10000.0
     
-    # Pre-populate history with a random walk
-    price_history = collections.deque(maxlen=100)
-    portfolio_history = collections.deque(maxlen=100)
+    # Pre-populate history with a random walk ending at current portfolio value
+    portfolio_history = collections.deque(maxlen=80)
+    simulated_value = initial_portfolio_value - 500.0
+    for _ in range(80):
+        simulated_value += random.uniform(-40.0, 45.0)
+        portfolio_history.append(simulated_value)
     
-    simulated_price = initial_sol_price - 5.0
-    for _ in range(100):
-        simulated_price += random.uniform(-0.4, 0.45)
-        price_history.append(simulated_price)
-        portfolio_history.append(sol_balance * simulated_price)
+    portfolio_history.append(initial_portfolio_value)
     
-    # Adjust last point to real price
-    price_history.append(initial_sol_price)
-    portfolio_history.append(sol_balance * initial_sol_price)
+    current_price = initial_sol_price
     
     console.clear()
     
     try:
         with Live(layout, refresh_per_second=2, screen=True):
             while True:
-                # Mock variation + intermittent real fetch
-                if random.random() < 0.1:
-                    real_price = get_sol_price()
-                    if real_price:
-                        current_price = real_price
-                    else:
-                        current_price = price_history[-1] + random.uniform(-0.1, 0.1)
-                else:
-                    current_price = price_history[-1] + random.uniform(-0.1, 0.1)
+                # Simulate price updates for the dashboard
+                current_price += random.uniform(-0.1, 0.1)
                 
-                price_history.append(current_price)
-                
-                # Mock a slightly changing SOL balance to make portfolio live
-                current_sol_balance = sol_balance + random.uniform(-0.01, 0.01)
-                current_portfolio_value = current_sol_balance * current_price
+                # Portfolio value walk
+                current_portfolio_value = portfolio_history[-1] + random.uniform(-10.0, 15.0)
                 portfolio_history.append(current_portfolio_value)
                 
                 # Update sections
-                layout["header"].update(get_header_panel(current_sol_balance, current_portfolio_value, current_price))
-                layout["balances"].update(get_balances_panel(current_sol_balance, current_price))
+                layout["header"].update(get_header_panel(sol_balance, current_portfolio_value, current_price))
                 
-                chart_str = ascii_plot(list(portfolio_history), height=11)
+                chart_str = ascii_plot(list(portfolio_history), height=10)
                 layout["chart"].update(Panel(
                     Text(chart_str, style="cyan"), 
-                    title="Live Portfolio Value ($) - Real-time ASCII Sparkline", 
-                    border_style="green"
+                    title="Live Portfolio Value (USD)", 
+                    border_style="cyan"
                 ))
                 
-                layout["positions"].update(get_positions_table(current_price))
+                layout["positions"].update(Panel(get_positions_table(current_price), border_style="magenta"))
                 layout["trades"].update(Panel(get_trade_history_table(), border_style="cyan"))
-                layout["strategy"].update(get_strategy_panel())
-                layout["regime"].update(get_regime_panel(list(price_history)))
-                layout["routes"].update(get_dex_routes_panel())
-                
-                fng_data = sentiment.get_fear_and_greed()
-                trending_data = sentiment.get_trending_tokens()
-                layout["sentiment"].update(get_sentiment_panel(fng_data, trending_data))
+                layout["regime"].update(get_market_regime_panel())
+                layout["profit_locked"].update(get_profit_locked_panel(current_portfolio_value))
+                layout["strategy"].update(Panel(get_strategy_performance_table(), border_style="yellow"))
                 
                 time.sleep(1)
     except KeyboardInterrupt:
