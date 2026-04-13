@@ -19,6 +19,17 @@ from .cross_chain_arbitrage import (
     detect_arbitrage,
 )
 from .bridge.monitor import BridgeMonitor, BridgeTransfer, BridgeTransferStatus
+from .bridge.gas_manager import (
+    ETHEREUM_CHAIN,
+    POLYGON_CHAIN,
+    SOLANA_CHAIN,
+    GasBridgeAction,
+    GasChainConfig,
+    GasChainState,
+    GasChainStatus,
+    GasManagementResult,
+    GasManager,
+)
 from .chain.ethereum import (
     EthereumChain,
     EthereumMainnet,
