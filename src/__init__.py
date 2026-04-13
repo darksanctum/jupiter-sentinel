@@ -6,3 +6,4 @@ from .risk import RiskManager
 from .analytics import TradingAnalytics
 from .arbitrage import RouteArbitrage
 from .cross_chain_arb import CrossChainArbDetector
+from .token_discovery import TokenDiscovery, TradeableToken

@@ -1,27 +1,36 @@
 """
 Jupiter Sentinel - Token Discovery
-Fetches boosted tokens from DexScreener and filters them down to
-tradeable Solana opportunities for downstream scanners.
+Fetches boosted tokens from DexScreener and resolves them into
+tradeable Solana pairs that can feed the scanner.
 """
 from __future__ import annotations
 
 import json
 import time
+import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Optional
 
-from .config import HEADERS
+from .config import SOL_MINT, USDC_MINT
 
 DEXSCREENER_BASE = "https://api.dexscreener.com"
-DEXSCREENER_TOKEN_BOOSTS_TOP_V1 = f"{DEXSCREENER_BASE}/token-boosts/top/v1"
-DEXSCREENER_TOKENS_V1 = f"{DEXSCREENER_BASE}/tokens/v1"
-DEXSCREENER_SOLANA_CHAIN_ID = "solana"
-MAX_TOKEN_BATCH_SIZE = 30
-DEFAULT_MIN_AGE_SECS = 60 * 60
+TOKEN_BOOSTS_TOP_URL = f"{DEXSCREENER_BASE}/token-boosts/top/v1"
+TOKENS_BY_ADDRESS_URL = f"{DEXSCREENER_BASE}/tokens/v1"
+DEXSCREENER_HEADERS = {
+    "User-Agent": "JupiterSentinel/1.0",
+    "Accept": "application/json",
+}
+
+SOLANA_CHAIN_ID = "solana"
+SCANNER_COMPATIBLE_QUOTES = {USDC_MINT, SOL_MINT}
+SCANNER_QUOTE_PRIORITY = {
+    USDC_MINT: 2,
+    SOL_MINT: 1,
+}
 
 
-def _safe_float(value: Any, default: float = 0.0) -> float:
+def _as_float(value: Any, default: float = 0.0) -> float:
     try:
         if value is None or value == "":
             return default
@@ -30,315 +39,270 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+def _chunks(values: list[str], size: int) -> Iterable[list[str]]:
+    for index in range(0, len(values), size):
+        yield values[index:index + size]
 
 
-def _chunked(items: Iterable[str], size: int) -> Iterable[list[str]]:
-    batch: list[str] = []
-    for item in items:
-        batch.append(item)
-        if len(batch) == size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
-
-
-def _normalize_timestamp(value: Any) -> Optional[float]:
-    raw = _safe_float(value, default=-1.0)
-    if raw <= 0:
+def _created_at_seconds(raw_value: Any) -> Optional[float]:
+    timestamp = _as_float(raw_value, default=0.0)
+    if timestamp <= 0:
         return None
-    if raw > 1_000_000_000_000:
-        return raw / 1000.0
-    return raw
-
-
-@dataclass(frozen=True)
-class TokenBoost:
-    chain_id: str
-    token_address: str
-    amount: float
-    total_amount: float
-    url: Optional[str] = None
-
-    @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> Optional["TokenBoost"]:
-        token_address = str(payload.get("tokenAddress", "")).strip()
-        if not token_address:
-            return None
-
-        amount = _safe_float(payload.get("amount"))
-        total_amount = _safe_float(payload.get("totalAmount"), default=amount)
-        return cls(
-            chain_id=str(payload.get("chainId", "")).strip(),
-            token_address=token_address,
-            amount=amount,
-            total_amount=total_amount,
-            url=payload.get("url"),
-        )
+    if timestamp > 10_000_000_000:
+        return timestamp / 1000.0
+    return timestamp
 
 
 @dataclass(frozen=True)
 class TradeableToken:
     chain_id: str
     token_address: str
-    name: str
     symbol: str
-    pair: str
+    name: str
+    pair_name: str
     pair_address: str
     dex_id: str
+    pair_url: str
+    input_mint: str
+    output_mint: str
+    quote_symbol: str
     quote_token_address: str
-    quote_token_symbol: str
-    price_usd: float
-    price_native: float
+    price_usd: Optional[float]
     liquidity_usd: float
+    liquidity_base: float
+    liquidity_quote: float
     volume_24h: float
-    buys_24h: int
-    sells_24h: int
+    volume_6h: float
+    volume_1h: float
+    volume_5m: float
     age_hours: float
-    fdv: float
-    market_cap: float
+    fdv: Optional[float]
+    market_cap: Optional[float]
     boost_amount: float
     boost_total_amount: float
-    active_boosts: int
-    pair_url: Optional[str]
+    boosts_active: int
+    scanner_compatible: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "chain_id": self.chain_id,
-            "token_address": self.token_address,
-            "name": self.name,
-            "symbol": self.symbol,
-            "pair": self.pair,
-            "pair_address": self.pair_address,
-            "dex_id": self.dex_id,
-            "quote_token_address": self.quote_token_address,
-            "quote_token_symbol": self.quote_token_symbol,
-            "price_usd": self.price_usd,
-            "price_native": self.price_native,
-            "liquidity_usd": self.liquidity_usd,
-            "volume_24h": self.volume_24h,
-            "buys_24h": self.buys_24h,
-            "sells_24h": self.sells_24h,
-            "age_hours": self.age_hours,
-            "fdv": self.fdv,
-            "market_cap": self.market_cap,
-            "boost_amount": self.boost_amount,
-            "boost_total_amount": self.boost_total_amount,
-            "active_boosts": self.active_boosts,
-            "pair_url": self.pair_url,
-        }
+        return asdict(self)
 
 
 class TokenDiscovery:
-    """Discover boosted tokens that already have tradeable Solana liquidity."""
+    """
+    Resolves DexScreener boosted tokens into tradeable pairs.
+
+    The current scanner normalizes output prices cleanly for USDC and SOL
+    pairs, so those pools are preferred when multiple tradeable pairs exist.
+    """
 
     def __init__(
         self,
-        *,
-        chain_id: str = DEXSCREENER_SOLANA_CHAIN_ID,
+        cache_ttl: int = 60,
         min_liquidity_usd: float = 0.0,
-        min_volume_24h: float = 0.0,
-        min_age_secs: float = DEFAULT_MIN_AGE_SECS,
-        request_timeout: int = 10,
+        min_volume_usd: float = 0.0,
+        min_pair_age_hours: float = 1.0,
     ) -> None:
-        self.chain_id = chain_id
-        self.min_liquidity_usd = float(min_liquidity_usd)
-        self.min_volume_24h = float(min_volume_24h)
-        self.min_age_secs = float(min_age_secs)
-        self.request_timeout = request_timeout
+        self.cache_ttl = cache_ttl
+        self.min_liquidity_usd = min_liquidity_usd
+        self.min_volume_usd = min_volume_usd
+        self.min_pair_age_hours = min_pair_age_hours
+        self._cache: Optional[list[TradeableToken]] = None
+        self._last_fetch = 0.0
 
-    def _request_json(self, url: str) -> Any:
-        request = urllib.request.Request(url, headers=HEADERS)
-        return json.loads(urllib.request.urlopen(request, timeout=self.request_timeout).read())
+    def get_tradeable_tokens(
+        self,
+        limit: Optional[int] = None,
+        scanner_compatible_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return boosted tokens with tradeability metrics."""
+        tokens = self._discover_tradeable_tokens()
+        if scanner_compatible_only:
+            tokens = [token for token in tokens if token.scanner_compatible]
+        if limit is not None:
+            tokens = tokens[:limit]
+        return [token.to_dict() for token in tokens]
 
-    def fetch_trending_boosts(self) -> list[TokenBoost]:
-        """Return boosted tokens from DexScreener for the configured chain."""
-        try:
-            payload = self._request_json(DEXSCREENER_TOKEN_BOOSTS_TOP_V1)
-        except Exception:
+    def build_scan_pairs(self, limit: Optional[int] = None) -> list[tuple[str, str, str]]:
+        """Build scanner-ready `(input_mint, output_mint, pair_name)` tuples."""
+        pairs: list[tuple[str, str, str]] = []
+        for token in self._discover_tradeable_tokens():
+            if not token.scanner_compatible:
+                continue
+            pairs.append((token.input_mint, token.output_mint, token.pair_name))
+            if limit is not None and len(pairs) >= limit:
+                break
+        return pairs
+
+    def _discover_tradeable_tokens(self) -> list[TradeableToken]:
+        now = time.time()
+        if self._cache is not None and (now - self._last_fetch) < self.cache_ttl:
+            return list(self._cache)
+
+        boosted_tokens = self._fetch_boosted_tokens()
+        if not boosted_tokens:
+            self._cache = []
+            self._last_fetch = now
             return []
 
-        boosts: list[TokenBoost] = []
-        seen: set[str] = set()
-        for item in payload if isinstance(payload, list) else []:
-            boost = TokenBoost.from_payload(item)
-            if not boost or boost.chain_id != self.chain_id:
+        solana_boosts: list[dict[str, Any]] = []
+        seen_addresses: set[str] = set()
+        for boost in boosted_tokens:
+            chain_id = str(boost.get("chainId", "")).lower()
+            token_address = str(boost.get("tokenAddress", "")).strip()
+            if chain_id != SOLANA_CHAIN_ID or not token_address or token_address in seen_addresses:
                 continue
-            if boost.token_address in seen:
+            solana_boosts.append(boost)
+            seen_addresses.add(token_address)
+
+        if not solana_boosts:
+            self._cache = []
+            self._last_fetch = now
+            return []
+
+        pairs_by_token = self._fetch_pairs_by_token(
+            [str(boost["tokenAddress"]).strip() for boost in solana_boosts]
+        )
+
+        discovered: list[TradeableToken] = []
+        for boost in solana_boosts:
+            token_address = str(boost["tokenAddress"]).strip()
+            pair = self._select_tradeable_pair(pairs_by_token.get(token_address, []), now)
+            if not pair:
                 continue
-            seen.add(boost.token_address)
-            boosts.append(boost)
-        return boosts
+            discovered.append(self._build_tradeable_token(boost, pair, now))
 
-    def fetch_pairs_for_tokens(self, token_addresses: list[str]) -> dict[str, list[dict[str, Any]]]:
-        """Batch-fetch pair metadata for up to 30 token addresses per request."""
-        pairs_by_token = {token_address: [] for token_address in token_addresses}
-        requested = set(token_addresses)
+        self._cache = discovered
+        self._last_fetch = now
+        return list(discovered)
 
-        for batch in _chunked(token_addresses, MAX_TOKEN_BATCH_SIZE):
-            url = f"{DEXSCREENER_TOKENS_V1}/{self.chain_id}/{','.join(batch)}"
-            try:
-                payload = self._request_json(url)
-            except Exception:
+    def _fetch_boosted_tokens(self) -> list[dict[str, Any]]:
+        payload = self._fetch_json(TOKEN_BOOSTS_TOP_URL)
+        if not isinstance(payload, list):
+            return []
+        return [item for item in payload if isinstance(item, dict)]
+
+    def _fetch_pairs_by_token(self, token_addresses: list[str]) -> dict[str, list[dict[str, Any]]]:
+        pairs_by_token: dict[str, list[dict[str, Any]]] = {address: [] for address in token_addresses}
+
+        for chunk in _chunks(token_addresses, 30):
+            joined = urllib.parse.quote(",".join(chunk), safe=",")
+            url = f"{TOKENS_BY_ADDRESS_URL}/{SOLANA_CHAIN_ID}/{joined}"
+            payload = self._fetch_json(url)
+            if not isinstance(payload, list):
                 continue
 
-            for pair in payload if isinstance(payload, list) else []:
-                base_address = str(pair.get("baseToken", {}).get("address", "")).strip()
-                quote_address = str(pair.get("quoteToken", {}).get("address", "")).strip()
-
-                if base_address in requested:
+            for pair in payload:
+                if not isinstance(pair, dict):
+                    continue
+                base_token = pair.get("baseToken", {}) or {}
+                base_address = str(base_token.get("address", "")).strip()
+                if base_address in pairs_by_token:
                     pairs_by_token[base_address].append(pair)
-                if quote_address in requested and quote_address != base_address:
-                    pairs_by_token[quote_address].append(pair)
 
         return pairs_by_token
 
+    def _fetch_json(self, url: str, timeout: int = 10) -> Any:
+        try:
+            request = urllib.request.Request(url, headers=DEXSCREENER_HEADERS)
+            response = urllib.request.urlopen(request, timeout=timeout)
+            return json.loads(response.read())
+        except Exception:
+            return None
+
+    def _select_tradeable_pair(
+        self,
+        pairs: list[dict[str, Any]],
+        now: float,
+    ) -> Optional[dict[str, Any]]:
+        candidates = [pair for pair in pairs if self._is_tradeable_pair(pair, now)]
+        if not candidates:
+            return None
+        return max(candidates, key=self._pair_rank)
+
+    def _is_tradeable_pair(self, pair: dict[str, Any], now: float) -> bool:
+        if str(pair.get("chainId", "")).lower() != SOLANA_CHAIN_ID:
+            return False
+
+        liquidity_usd = _as_float((pair.get("liquidity", {}) or {}).get("usd"))
+        volume_24h = _as_float((pair.get("volume", {}) or {}).get("h24"))
+        age_hours = self._pair_age_hours(pair, now)
+
+        if liquidity_usd <= self.min_liquidity_usd:
+            return False
+        if volume_24h <= self.min_volume_usd:
+            return False
+        if age_hours <= self.min_pair_age_hours:
+            return False
+        return True
+
+    def _pair_age_hours(self, pair: dict[str, Any], now: float) -> float:
+        created_at_seconds = _created_at_seconds(pair.get("pairCreatedAt"))
+        if created_at_seconds is None or created_at_seconds > now:
+            return 0.0
+        return (now - created_at_seconds) / 3600.0
+
+    def _pair_rank(self, pair: dict[str, Any]) -> tuple[int, int, float, float]:
+        quote_address = str((pair.get("quoteToken", {}) or {}).get("address", "")).strip()
+        liquidity_usd = _as_float((pair.get("liquidity", {}) or {}).get("usd"))
+        volume_24h = _as_float((pair.get("volume", {}) or {}).get("h24"))
+        return (
+            1 if quote_address in SCANNER_COMPATIBLE_QUOTES else 0,
+            SCANNER_QUOTE_PRIORITY.get(quote_address, 0),
+            liquidity_usd,
+            volume_24h,
+        )
+
     def _build_tradeable_token(
         self,
-        boost: TokenBoost,
+        boost: dict[str, Any],
         pair: dict[str, Any],
-        *,
-        now_ts: float,
-    ) -> Optional[TradeableToken]:
-        if str(pair.get("chainId", "")).strip() != self.chain_id:
-            return None
-
+        now: float,
+    ) -> TradeableToken:
         base_token = pair.get("baseToken", {}) or {}
         quote_token = pair.get("quoteToken", {}) or {}
-        base_address = str(base_token.get("address", "")).strip()
+        liquidity = pair.get("liquidity", {}) or {}
+        volume = pair.get("volume", {}) or {}
         quote_address = str(quote_token.get("address", "")).strip()
 
-        if boost.token_address == base_address:
-            token_meta = base_token
-            other_token = quote_token
-        elif boost.token_address == quote_address:
-            token_meta = quote_token
-            other_token = base_token
-        else:
-            return None
+        price_usd = pair.get("priceUsd")
+        parsed_price_usd = None if price_usd in (None, "") else _as_float(price_usd, default=0.0)
+        fdv = pair.get("fdv")
+        parsed_fdv = None if fdv in (None, "") else _as_float(fdv, default=0.0)
+        market_cap = pair.get("marketCap")
+        parsed_market_cap = None if market_cap in (None, "") else _as_float(market_cap, default=0.0)
 
-        liquidity_usd = _safe_float(pair.get("liquidity", {}).get("usd"))
-        volume_24h = _safe_float(pair.get("volume", {}).get("h24"))
-        created_at = _normalize_timestamp(pair.get("pairCreatedAt"))
-        if created_at is None:
-            return None
-
-        age_secs = now_ts - created_at
-        if (
-            liquidity_usd <= self.min_liquidity_usd
-            or volume_24h <= self.min_volume_24h
-            or age_secs <= self.min_age_secs
-        ):
-            return None
-
-        txns_24h = pair.get("txns", {}).get("h24", {}) or {}
         return TradeableToken(
-            chain_id=self.chain_id,
-            token_address=boost.token_address,
-            name=str(token_meta.get("name", "")).strip(),
-            symbol=str(token_meta.get("symbol", "")).strip(),
-            pair=(
+            chain_id=SOLANA_CHAIN_ID,
+            token_address=str(base_token.get("address", "")).strip(),
+            symbol=str(base_token.get("symbol", "")).strip(),
+            name=str(base_token.get("name", "")).strip(),
+            pair_name=(
                 f"{str(base_token.get('symbol', '')).strip()}/"
                 f"{str(quote_token.get('symbol', '')).strip()}"
-            ).strip("/"),
+            ),
             pair_address=str(pair.get("pairAddress", "")).strip(),
             dex_id=str(pair.get("dexId", "")).strip(),
-            quote_token_address=str(other_token.get("address", "")).strip(),
-            quote_token_symbol=str(other_token.get("symbol", "")).strip(),
-            price_usd=_safe_float(pair.get("priceUsd")),
-            price_native=_safe_float(pair.get("priceNative")),
-            liquidity_usd=liquidity_usd,
-            volume_24h=volume_24h,
-            buys_24h=_safe_int(txns_24h.get("buys")),
-            sells_24h=_safe_int(txns_24h.get("sells")),
-            age_hours=round(age_secs / 3600.0, 2),
-            fdv=_safe_float(pair.get("fdv")),
-            market_cap=_safe_float(pair.get("marketCap")),
-            boost_amount=boost.amount,
-            boost_total_amount=boost.total_amount,
-            active_boosts=_safe_int(pair.get("boosts", {}).get("active")),
-            pair_url=pair.get("url") or boost.url,
+            pair_url=str(pair.get("url", "")).strip(),
+            input_mint=str(base_token.get("address", "")).strip(),
+            output_mint=quote_address,
+            quote_symbol=str(quote_token.get("symbol", "")).strip(),
+            quote_token_address=quote_address,
+            price_usd=parsed_price_usd,
+            liquidity_usd=_as_float(liquidity.get("usd")),
+            liquidity_base=_as_float(liquidity.get("base")),
+            liquidity_quote=_as_float(liquidity.get("quote")),
+            volume_24h=_as_float(volume.get("h24")),
+            volume_6h=_as_float(volume.get("h6")),
+            volume_1h=_as_float(volume.get("h1")),
+            volume_5m=_as_float(volume.get("m5")),
+            age_hours=self._pair_age_hours(pair, now),
+            fdv=parsed_fdv,
+            market_cap=parsed_market_cap,
+            boost_amount=_as_float(boost.get("amount")),
+            boost_total_amount=_as_float(boost.get("totalAmount")),
+            boosts_active=int(_as_float((pair.get("boosts", {}) or {}).get("active"))),
+            scanner_compatible=quote_address in SCANNER_COMPATIBLE_QUOTES,
         )
 
-    def discover_tradeable_tokens(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
-        """
-        Return boosted Solana tokens that have positive liquidity, positive 24h volume,
-        and are older than the minimum age threshold.
-        """
-        boosts = self.fetch_trending_boosts()
-        if not boosts:
-            return []
 
-        pairs_by_token = self.fetch_pairs_for_tokens([boost.token_address for boost in boosts])
-        now_ts = time.time()
-        discovered: list[TradeableToken] = []
-
-        for boost in boosts:
-            candidates = [
-                tradeable
-                for pair in pairs_by_token.get(boost.token_address, [])
-                if (
-                    tradeable := self._build_tradeable_token(
-                        boost,
-                        pair,
-                        now_ts=now_ts,
-                    )
-                )
-            ]
-            if not candidates:
-                continue
-
-            best_pair = max(
-                candidates,
-                key=lambda item: (
-                    item.liquidity_usd,
-                    item.volume_24h,
-                    item.active_boosts,
-                    item.age_hours,
-                ),
-            )
-            discovered.append(best_pair)
-
-        discovered.sort(
-            key=lambda item: (
-                item.boost_total_amount,
-                item.liquidity_usd,
-                item.volume_24h,
-            ),
-            reverse=True,
-        )
-
-        if limit is not None:
-            discovered = discovered[:limit]
-        return [item.to_dict() for item in discovered]
-
-
-def discover_tradeable_tokens(
-    limit: Optional[int] = None,
-    *,
-    chain_id: str = DEXSCREENER_SOLANA_CHAIN_ID,
-    min_liquidity_usd: float = 0.0,
-    min_volume_24h: float = 0.0,
-    min_age_secs: float = DEFAULT_MIN_AGE_SECS,
-    request_timeout: int = 10,
-) -> list[dict[str, Any]]:
-    """Convenience wrapper for scanner integrations."""
-    discovery = TokenDiscovery(
-        chain_id=chain_id,
-        min_liquidity_usd=min_liquidity_usd,
-        min_volume_24h=min_volume_24h,
-        min_age_secs=min_age_secs,
-        request_timeout=request_timeout,
-    )
-    return discovery.discover_tradeable_tokens(limit=limit)
-
-
-if __name__ == "__main__":
-    print(json.dumps(discover_tradeable_tokens(), indent=2))
+__all__ = ["TradeableToken", "TokenDiscovery"]

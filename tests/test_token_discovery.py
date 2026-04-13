@@ -1,15 +1,19 @@
 import json
 import sys
 from pathlib import Path
+from urllib.error import URLError
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import src.token_discovery as token_discovery
-from src.token_discovery import (
-    DEXSCREENER_TOKEN_BOOSTS_TOP_V1,
-    DEXSCREENER_TOKENS_V1,
-    TokenDiscovery,
-)
+from src.config import SOL_MINT, USDC_MINT
+from src.token_discovery import TokenDiscovery
+
+TOKEN_ALPHA = "Alpha111111111111111111111111111111111111111"
+TOKEN_BETA = "Beta1111111111111111111111111111111111111111"
+USDT_MINT = "Es9vMFrzaCERmJfrF4H2Fy2uWbT2kHf8N13kYx4xXfY"
 
 
 class FakeResponse:
@@ -37,182 +41,165 @@ def install_urlopen(monkeypatch, *responses):
     return calls
 
 
-def test_discover_tradeable_tokens_filters_and_selects_best_pair(monkeypatch):
-    now_ts = 1_700_000_000.0
-    monkeypatch.setattr(token_discovery.time, "time", lambda: now_ts)
+def test_get_tradeable_tokens_filters_for_solana_liquidity_volume_and_age(monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr(token_discovery.time, "time", lambda: now)
+
     calls = install_urlopen(
         monkeypatch,
         [
-            {
-                "chainId": "solana",
-                "tokenAddress": "TokenAlpha",
-                "amount": 25,
-                "totalAmount": 500,
-                "url": "https://dexscreener.com/solana/tokenalpha",
-            },
-            {
-                "chainId": "ethereum",
-                "tokenAddress": "EthToken",
-                "amount": 100,
-                "totalAmount": 999,
-            },
-            {
-                "chainId": "solana",
-                "tokenAddress": "TokenBeta",
-                "amount": 20,
-                "totalAmount": 300,
-            },
+            {"chainId": "solana", "tokenAddress": TOKEN_ALPHA, "amount": 120, "totalAmount": 500},
+            {"chainId": "ethereum", "tokenAddress": "0xdeadbeef", "amount": 50, "totalAmount": 60},
+            {"chainId": "solana", "tokenAddress": TOKEN_BETA, "amount": 90, "totalAmount": 120},
         ],
         [
             {
                 "chainId": "solana",
+                "pairAddress": "young-alpha",
                 "dexId": "raydium",
-                "url": "https://dexscreener.com/solana/pair-fresh",
-                "pairAddress": "pair-fresh",
-                "baseToken": {
-                    "address": "TokenAlpha",
-                    "name": "Alpha",
-                    "symbol": "ALPHA",
-                },
-                "quoteToken": {
-                    "address": "USDC",
-                    "name": "USD Coin",
-                    "symbol": "USDC",
-                },
-                "priceNative": "0.0002",
+                "url": "https://dexscreener.com/solana/young-alpha",
+                "baseToken": {"address": TOKEN_ALPHA, "symbol": "ALP", "name": "Alpha"},
+                "quoteToken": {"address": USDC_MINT, "symbol": "USDC", "name": "USD Coin"},
                 "priceUsd": "0.12",
-                "txns": {"h24": {"buys": 10, "sells": 8}},
-                "volume": {"h24": 9_000},
-                "liquidity": {"usd": 4_000},
-                "fdv": 120_000,
-                "marketCap": 90_000,
-                "pairCreatedAt": int((now_ts - 1_800) * 1000),
-                "boosts": {"active": 2},
+                "liquidity": {"usd": 2_500, "base": 20_000, "quote": 2_500},
+                "volume": {"h24": 8_000, "h6": 2_000, "h1": 500, "m5": 40},
+                "pairCreatedAt": int((now - 45 * 60) * 1000),
+                "boosts": {"active": 1},
             },
             {
                 "chainId": "solana",
+                "pairAddress": "alpha-sol",
                 "dexId": "orca",
-                "url": "https://dexscreener.com/solana/pair-old",
-                "pairAddress": "pair-old",
-                "baseToken": {
-                    "address": "TokenAlpha",
-                    "name": "Alpha",
-                    "symbol": "ALPHA",
-                },
-                "quoteToken": {
-                    "address": "USDC",
-                    "name": "USD Coin",
-                    "symbol": "USDC",
-                },
-                "priceNative": "0.0003",
+                "url": "https://dexscreener.com/solana/alpha-sol",
+                "baseToken": {"address": TOKEN_ALPHA, "symbol": "ALP", "name": "Alpha"},
+                "quoteToken": {"address": SOL_MINT, "symbol": "SOL", "name": "Solana"},
                 "priceUsd": "0.15",
-                "txns": {"h24": {"buys": 40, "sells": 31}},
-                "volume": {"h24": 15_000},
-                "liquidity": {"usd": 11_000},
-                "fdv": 150_000,
-                "marketCap": 110_000,
-                "pairCreatedAt": int((now_ts - 7_200) * 1000),
-                "boosts": {"active": 4},
+                "liquidity": {"usd": 12_000, "base": 80_000, "quote": 100},
+                "volume": {"h24": 25_000, "h6": 10_000, "h1": 1_200, "m5": 60},
+                "pairCreatedAt": int((now - 4 * 3600) * 1000),
+                "boosts": {"active": 2},
+                "fdv": "2000000",
+                "marketCap": "1500000",
             },
             {
                 "chainId": "solana",
+                "pairAddress": "alpha-usdc",
                 "dexId": "raydium",
-                "url": "https://dexscreener.com/solana/token-beta",
-                "pairAddress": "pair-beta",
-                "baseToken": {
-                    "address": "TokenBeta",
-                    "name": "Beta",
-                    "symbol": "BETA",
-                },
-                "quoteToken": {
-                    "address": "USDC",
-                    "name": "USD Coin",
-                    "symbol": "USDC",
-                },
-                "priceNative": "0.0001",
-                "priceUsd": "0.05",
-                "txns": {"h24": {"buys": 4, "sells": 2}},
-                "volume": {"h24": 0},
-                "liquidity": {"usd": 5_000},
-                "fdv": 50_000,
-                "marketCap": 40_000,
-                "pairCreatedAt": int((now_ts - 9_000) * 1000),
+                "url": "https://dexscreener.com/solana/alpha-usdc",
+                "baseToken": {"address": TOKEN_ALPHA, "symbol": "ALP", "name": "Alpha"},
+                "quoteToken": {"address": USDC_MINT, "symbol": "USDC", "name": "USD Coin"},
+                "priceUsd": "0.16",
+                "liquidity": {"usd": 15_000, "base": 90_000, "quote": 15_000},
+                "volume": {"h24": 30_000, "h6": 12_000, "h1": 2_500, "m5": 100},
+                "pairCreatedAt": int((now - 2 * 3600) * 1000),
+                "boosts": {"active": 3},
+                "fdv": "2500000",
+                "marketCap": "1800000",
+            },
+            {
+                "chainId": "solana",
+                "pairAddress": "beta-usdc",
+                "dexId": "raydium",
+                "url": "https://dexscreener.com/solana/beta-usdc",
+                "baseToken": {"address": TOKEN_BETA, "symbol": "BET", "name": "Beta"},
+                "quoteToken": {"address": USDC_MINT, "symbol": "USDC", "name": "USD Coin"},
+                "priceUsd": "0.03",
+                "liquidity": {"usd": 0, "base": 100_000, "quote": 0},
+                "volume": {"h24": 12_000, "h6": 2_000, "h1": 100, "m5": 4},
+                "pairCreatedAt": int((now - 3 * 3600) * 1000),
                 "boosts": {"active": 1},
             },
         ],
     )
 
     discovery = TokenDiscovery()
+    tokens = discovery.get_tradeable_tokens()
 
-    tokens = discovery.discover_tradeable_tokens()
+    assert len(tokens) == 1
+    assert tokens[0] == {
+        "chain_id": "solana",
+        "token_address": TOKEN_ALPHA,
+        "symbol": "ALP",
+        "name": "Alpha",
+        "pair_name": "ALP/USDC",
+        "pair_address": "alpha-usdc",
+        "dex_id": "raydium",
+        "pair_url": "https://dexscreener.com/solana/alpha-usdc",
+        "input_mint": TOKEN_ALPHA,
+        "output_mint": USDC_MINT,
+        "quote_symbol": "USDC",
+        "quote_token_address": USDC_MINT,
+        "price_usd": pytest.approx(0.16),
+        "liquidity_usd": pytest.approx(15_000.0),
+        "liquidity_base": pytest.approx(90_000.0),
+        "liquidity_quote": pytest.approx(15_000.0),
+        "volume_24h": pytest.approx(30_000.0),
+        "volume_6h": pytest.approx(12_000.0),
+        "volume_1h": pytest.approx(2_500.0),
+        "volume_5m": pytest.approx(100.0),
+        "age_hours": pytest.approx(2.0),
+        "fdv": pytest.approx(2_500_000.0),
+        "market_cap": pytest.approx(1_800_000.0),
+        "boost_amount": pytest.approx(120.0),
+        "boost_total_amount": pytest.approx(500.0),
+        "boosts_active": 3,
+        "scanner_compatible": True,
+    }
 
-    assert tokens == [
-        {
-            "chain_id": "solana",
-            "token_address": "TokenAlpha",
-            "name": "Alpha",
-            "symbol": "ALPHA",
-            "pair": "ALPHA/USDC",
-            "pair_address": "pair-old",
-            "dex_id": "orca",
-            "quote_token_address": "USDC",
-            "quote_token_symbol": "USDC",
-            "price_usd": 0.15,
-            "price_native": 0.0003,
-            "liquidity_usd": 11_000.0,
-            "volume_24h": 15_000.0,
-            "buys_24h": 40,
-            "sells_24h": 31,
-            "age_hours": 2.0,
-            "fdv": 150_000.0,
-            "market_cap": 110_000.0,
-            "boost_amount": 25.0,
-            "boost_total_amount": 500.0,
-            "active_boosts": 4,
-            "pair_url": "https://dexscreener.com/solana/pair-old",
-        }
-    ]
+    request, timeout = calls[0]
+    assert timeout == 10
+    assert request.full_url == token_discovery.TOKEN_BOOSTS_TOP_URL
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["user-agent"] == token_discovery.DEXSCREENER_HEADERS["User-Agent"]
+    assert headers["accept"] == token_discovery.DEXSCREENER_HEADERS["Accept"]
 
-    first_request, first_timeout = calls[0]
-    assert first_timeout == 10
-    assert first_request.full_url == DEXSCREENER_TOKEN_BOOSTS_TOP_V1
-
-    second_request, second_timeout = calls[1]
-    assert second_timeout == 10
-    assert second_request.full_url == f"{DEXSCREENER_TOKENS_V1}/solana/TokenAlpha,TokenBeta"
+    request, timeout = calls[1]
+    assert timeout == 10
+    assert request.full_url == (
+        f"{token_discovery.TOKENS_BY_ADDRESS_URL}/solana/{TOKEN_ALPHA},{TOKEN_BETA}"
+    )
 
 
-def test_fetch_pairs_for_tokens_batches_requests_in_groups_of_thirty(monkeypatch):
-    token_addresses = [f"Token{i:02d}" for i in range(31)]
-    calls = install_urlopen(
+def test_build_scan_pairs_skips_non_scanner_compatible_quotes(monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr(token_discovery.time, "time", lambda: now)
+
+    install_urlopen(
         monkeypatch,
         [
-            {
-                "chainId": "solana",
-                "pairAddress": "pair-00",
-                "baseToken": {"address": "Token00", "symbol": "TK0"},
-                "quoteToken": {"address": "USDC", "symbol": "USDC"},
-            }
+            {"chainId": "solana", "tokenAddress": TOKEN_ALPHA, "amount": 50, "totalAmount": 100},
         ],
         [
             {
                 "chainId": "solana",
-                "pairAddress": "pair-30",
-                "baseToken": {"address": "Token30", "symbol": "TK30"},
-                "quoteToken": {"address": "USDC", "symbol": "USDC"},
-            }
+                "pairAddress": "alpha-usdt",
+                "dexId": "raydium",
+                "url": "https://dexscreener.com/solana/alpha-usdt",
+                "baseToken": {"address": TOKEN_ALPHA, "symbol": "ALP", "name": "Alpha"},
+                "quoteToken": {"address": USDT_MINT, "symbol": "USDT", "name": "Tether"},
+                "priceUsd": "0.20",
+                "liquidity": {"usd": 22_000, "base": 110_000, "quote": 22_000},
+                "volume": {"h24": 40_000, "h6": 12_000, "h1": 2_000, "m5": 75},
+                "pairCreatedAt": int((now - 2 * 3600) * 1000),
+                "boosts": {"active": 1},
+            },
         ],
     )
 
-    discovery = TokenDiscovery()
+    discovery = TokenDiscovery(cache_ttl=0)
 
-    pairs_by_token = discovery.fetch_pairs_for_tokens(token_addresses)
+    tokens = discovery.get_tradeable_tokens()
+    scan_pairs = discovery.build_scan_pairs()
 
-    assert len(calls) == 2
-    assert calls[0][0].full_url == (
-        f"{DEXSCREENER_TOKENS_V1}/solana/"
-        + ",".join(token_addresses[:30])
-    )
-    assert calls[1][0].full_url == f"{DEXSCREENER_TOKENS_V1}/solana/{token_addresses[30]}"
-    assert [pair["pairAddress"] for pair in pairs_by_token["Token00"]] == ["pair-00"]
-    assert [pair["pairAddress"] for pair in pairs_by_token["Token30"]] == ["pair-30"]
+    assert len(tokens) == 1
+    assert tokens[0]["pair_name"] == "ALP/USDT"
+    assert tokens[0]["scanner_compatible"] is False
+    assert scan_pairs == []
+
+
+def test_get_tradeable_tokens_returns_empty_on_upstream_errors(monkeypatch):
+    install_urlopen(monkeypatch, URLError("network down"))
+
+    discovery = TokenDiscovery(cache_ttl=0)
+
+    assert discovery.get_tradeable_tokens() == []
