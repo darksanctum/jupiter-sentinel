@@ -3,7 +3,6 @@ Jupiter Sentinel - Terminal Dashboard
 Beautiful real-time dashboard using Rich library.
 """
 import time
-import json
 import random
 import urllib.request
 import collections
@@ -27,6 +26,7 @@ from .config import (
     JUPITER_SWAP_V1, HEADERS, RPC_URL, SOL_MINT, USDC_MINT,
     SCAN_PAIRS, load_keypair,
 )
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -34,9 +34,9 @@ def get_sol_price() -> Optional[float]:
     try:
         url = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, USDC_MINT, 1_000_000, 10)
         req = urllib.request.Request(url, headers=HEADERS)
-        resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
+        resp = request_json(req, timeout=5, describe="Dashboard SOL quote")
         return int(resp["outAmount"]) / 1e6 / 0.001
-    except:
+    except Exception:
         return None
 
 
@@ -50,10 +50,10 @@ def get_wallet_balance() -> float:
         }).encode()
         req = urllib.request.Request(RPC_URL, data=rpc_body,
             headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
-        resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
+        resp = request_json(req, timeout=5, describe="Dashboard wallet balance")
         sol = resp.get("result", {}).get("value", 0) / 1e9
         return sol
-    except:
+    except Exception:
         return 0.0
 
 

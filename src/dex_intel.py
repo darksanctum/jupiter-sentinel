@@ -3,13 +3,13 @@ Jupiter Sentinel - DEX Route Intelligence
 Maps Jupiter's routing decisions across DEXes for arbitrage opportunities.
 Uses the /swap/v1/program-id-to-label endpoint + route plan analysis.
 """
-import json
 import urllib.request
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SCAN_PAIRS, SOL_MINT, USDC_MINT
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -45,7 +45,7 @@ class DexRouteIntel:
         try:
             url = f"{JUPITER_SWAP_V1}/program-id-to-label"
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            resp = request_json(req, timeout=10, describe="Jupiter program-id-to-label")
             return resp
         except Exception:
             return {}
@@ -65,7 +65,7 @@ class DexRouteIntel:
                 slippage_bps,
             )
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            resp = request_json(req, timeout=10, describe="DEX route analysis")
 
             legs = []
             dex_path = []
@@ -94,7 +94,7 @@ class DexRouteIntel:
                 dex_path=dex_path,
                 route_label=route_label,
             )
-        except Exception as e:
+        except Exception:
             return None
 
     def find_route_discrepancies(

@@ -16,6 +16,8 @@ from .executor import TradeExecutor
 from .risk import RiskManager
 from .arbitrage import RouteArbitrage
 from .sentiment import SentimentAnalyzer
+from .resilience import atomic_write_text
+from .security import display_wallet_status
 
 
 class JupiterSentinel:
@@ -47,7 +49,7 @@ class JupiterSentinel:
         
         # Show wallet info
         balance = self.executor.get_balance()
-        print(f"Wallet: {balance['address']}")
+        print(f"Wallet: {display_wallet_status(balance.get('address'))}")
         print(f"Balance: {balance['sol']:.6f} SOL (${balance['usd_value']:.2f})")
         print(f"SOL Price: ${balance['sol_price']:.2f}")
         print()
@@ -144,15 +146,22 @@ class JupiterSentinel:
         # Save reports
         from .config import DATA_DIR
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        
-        with open(DATA_DIR / f"report_{ts}.json", "w") as f:
-            json.dump({
-                "portfolio": report,
-                "scanner": scanner_report,
-                "arbitrage": len(self.arbitrage.opportunities),
-            }, f, indent=2, default=str)
-        
-        print(f"\nReport saved to data/report_{ts}.json")
+
+        report_path = DATA_DIR / f"report_{ts}.json"
+        atomic_write_text(
+            report_path,
+            json.dumps(
+                {
+                    "portfolio": report,
+                    "scanner": scanner_report,
+                    "arbitrage": len(self.arbitrage.opportunities),
+                },
+                indent=2,
+                default=str,
+            ),
+        )
+
+        print(f"\nReport saved to {report_path}")
 
 
 def main() -> None:

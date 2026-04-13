@@ -2,13 +2,13 @@
 Jupiter Sentinel - Route Arbitrage Detector
 Detects price discrepancies between different swap routes on Jupiter.
 """
-import json
 import urllib.request
 from typing import Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -65,7 +65,7 @@ class RouteArbitrage:
                     only_direct_routes=False,
                 )
                 req = urllib.request.Request(url, headers=HEADERS)
-                resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+                resp = request_json(req, timeout=10, describe=f"Route arbitrage quote {pair_name}")
                 
                 out_amount = int(resp["outAmount"])
                 routes = resp.get("routePlan", [])
@@ -94,7 +94,7 @@ class RouteArbitrage:
                     "price_impact": float(resp.get("priceImpactPct", 0)),
                 })
                 
-            except Exception as e:
+            except Exception:
                 continue
         
         # Find price discrepancies between routes

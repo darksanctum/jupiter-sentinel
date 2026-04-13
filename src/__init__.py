@@ -7,6 +7,7 @@ from .arbitrage import RouteArbitrage
 from .cross_chain_arb import CrossChainArbDetector
 from .token_discovery import TokenDiscovery, TradeableToken
 from .portfolio_risk import PortfolioRiskManager
+from .rate_limiter import JupiterRateLimiter, JupiterRequestPriority, QuoteRequest
 
 try:
     from .risk import RiskManager

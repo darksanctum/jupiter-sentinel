@@ -2,12 +2,12 @@
 Jupiter Sentinel - Cross-Route Arbitrage Detector
 Detects price discrepancies between SOL->Token and Token->SOL routes.
 """
-import json
 import urllib.request
 from typing import Any, Dict, List
 from datetime import datetime
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT, SCAN_PAIRS
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -26,9 +26,9 @@ def detect_triangular_arb() -> List[Dict[str, Any]]:
     try:
         url = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, USDC_MINT, 1_000_000, 10)
         req = urllib.request.Request(url, headers=HEADERS)
-        resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        resp = request_json(req, timeout=10, describe="Triangular arb SOL quote")
         sol_usdc = int(resp["outAmount"]) / 1e6 / 0.001  # USDC per SOL
-    except:
+    except Exception:
         print("Could not get SOL/USDC rate")
         return []
     
@@ -49,7 +49,7 @@ def detect_triangular_arb() -> List[Dict[str, Any]]:
             # Leg 1: SOL -> Token (100k lamports)
             url1 = build_jupiter_quote_url(JUPITER_SWAP_V1, SOL_MINT, token_mint, 100_000, 10)
             req1 = urllib.request.Request(url1, headers=HEADERS)
-            resp1 = json.loads(urllib.request.urlopen(req1, timeout=10).read())
+            resp1 = request_json(req1, timeout=10, describe=f"Triangular arb leg 1 {name}")
             sol_to_token = int(resp1["outAmount"])
             
             # Leg 2: Token -> USDC
@@ -61,7 +61,7 @@ def detect_triangular_arb() -> List[Dict[str, Any]]:
                 10,
             )
             req2 = urllib.request.Request(url2, headers=HEADERS)
-            resp2 = json.loads(urllib.request.urlopen(req2, timeout=10).read())
+            resp2 = request_json(req2, timeout=10, describe=f"Triangular arb leg 2 {name}")
             token_to_usdc = int(resp2["outAmount"]) / 1e6
             
             # Leg 3: USDC -> SOL (implied)

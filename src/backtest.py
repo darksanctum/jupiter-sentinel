@@ -28,6 +28,7 @@ from .config import (
     VOLATILITY_THRESHOLD,
 )
 from .oracle import PricePoint
+from .resilience import atomic_write_text
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
 from .strategies.mean_reversion import scan_for_signals as scan_mean_reversion_signals
@@ -1085,9 +1086,7 @@ def format_strategy_comparison_report(results: Sequence[BacktestResult], *, sour
 def write_backtest_report(report: str, output_path: Path) -> Path:
     """Persist the markdown report to disk."""
     output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(report, encoding="utf-8")
-    return output_path
+    return atomic_write_text(output_path, report, encoding="utf-8")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

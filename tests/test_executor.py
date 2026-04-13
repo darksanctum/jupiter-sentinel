@@ -151,6 +151,33 @@ def test_execute_swap_dry_run_calculates_sol_output_usd_value(monkeypatch):
     assert trade_executor.trade_history == []
 
 
+def test_execute_swap_blocks_cash_funded_entry_above_hard_position_limit(monkeypatch):
+    trade_executor = make_executor(monkeypatch)
+    calls = []
+
+    def fake_get_quote(input_mint, output_mint, amount, slippage_bps=300):
+        calls.append((input_mint, output_mint, amount, slippage_bps))
+        if input_mint == executor.SOL_MINT and output_mint == executor.USDC_MINT:
+            return {"outAmount": "150000"}
+        raise AssertionError("Main quote should not execute after the hard limit blocks the entry")
+
+    monkeypatch.setattr(trade_executor, "get_quote", fake_get_quote)
+
+    result = trade_executor.execute_swap(
+        executor.SOL_MINT,
+        VALID_ALT_MINT,
+        100_000_000,
+        dry_run=False,
+    )
+
+    assert result["status"] == "blocked"
+    assert "Hard position limit exceeded" in result["error"]
+    assert calls == [
+        (executor.SOL_MINT, executor.USDC_MINT, 1_000_000, 50),
+    ]
+    assert trade_executor.trade_history == [result]
+
+
 def test_execute_swap_success_signs_and_broadcasts_transaction(monkeypatch):
     calls = install_urlopen(
         monkeypatch,

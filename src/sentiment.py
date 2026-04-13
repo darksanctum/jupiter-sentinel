@@ -1,7 +1,8 @@
 import time
-import json
 import urllib.request
 from typing import Any, Dict, List, Optional
+
+from .resilience import request_json
 
 class SentimentAnalyzer:
     """
@@ -26,7 +27,7 @@ class SentimentAnalyzer:
                 "https://api.alternative.me/fng/",
                 headers={"User-Agent": "Mozilla/5.0"}
             )
-            resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
+            resp = request_json(req, timeout=5, describe="Fear and Greed index")
             data = resp.get("data", [])[0]
             
             self.fng_cache = {
@@ -35,9 +36,9 @@ class SentimentAnalyzer:
             }
             self.fng_last_fetch = now
             return self.fng_cache
-        except Exception as e:
+        except Exception:
             # Fallback in case of error
-            return {"value": 50, "classification": "Neutral"}
+            return self.fng_cache or {"value": 50, "classification": "Neutral"}
 
     def get_trending_tokens(self) -> List[Dict[str, Any]]:
         """Fetch trending tokens from CoinGecko"""
@@ -50,7 +51,7 @@ class SentimentAnalyzer:
                 "https://api.coingecko.com/api/v3/search/trending",
                 headers={"User-Agent": "Mozilla/5.0"}
             )
-            resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
+            resp = request_json(req, timeout=5, describe="CoinGecko trending tokens")
             coins = resp.get("coins", [])
             
             trending = []
@@ -65,8 +66,8 @@ class SentimentAnalyzer:
             self.trending_cache = trending
             self.trending_last_fetch = now
             return self.trending_cache
-        except Exception as e:
-            return []
+        except Exception:
+            return list(self.trending_cache or [])
             
     def is_extreme_fear(self) -> bool:
         """Helper to determine if the market is in extreme fear."""

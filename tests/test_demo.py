@@ -10,7 +10,7 @@ def test_run_demo_returns_mock_backed_report():
     report = demo.run_demo()
 
     assert report["mode"] == "demo"
-    assert report["wallet"]["address"] == demo.DEMO_WALLET
+    assert report["wallet"]["address"] == demo.DEMO_WALLET_LABEL
     assert report["wallet"]["sol"] > 0
     assert report["scanner"]["pairs"]
     assert report["scanner"]["alerts"]

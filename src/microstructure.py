@@ -4,6 +4,10 @@ from typing import Dict, List, Optional
 import aiohttp
 import time
 
+from .config import SOL_MINT, USDC_MINT
+from .resilience import async_request_json
+from .security import sanitize_sensitive_text
+
 logger = logging.getLogger(__name__)
 
 class MicrostructureAnalyzer:
@@ -32,14 +36,16 @@ class MicrostructureAnalyzer:
         
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        logger.warning(f"Jupiter API returned status {response.status}")
-                        return None
+                return await async_request_json(
+                    session,
+                    url,
+                    params=params,
+                    timeout=10,
+                    logger=logger.warning,
+                    describe="Microstructure quote",
+                )
             except Exception as e:
-                logger.error(f"Error fetching quote: {e}")
+                logger.error("Error fetching quote: %s", sanitize_sensitive_text(e))
                 return None
 
     async def analyze_liquidity(self, input_mint: str, output_mint: str) -> Dict:
@@ -123,13 +129,9 @@ class MicrostructureAnalyzer:
 
 
 async def main():
-    # Example usage: USDC to SOL
-    USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-    SOL = "So11111111111111111111111111111111111111112"
-    
     analyzer = MicrostructureAnalyzer()
     print("Analyzing USDC -> SOL liquidity depth...")
-    results = await analyzer.analyze_liquidity(USDC, SOL)
+    results = await analyzer.analyze_liquidity(USDC_MINT, SOL_MINT)
     analyzer.print_analysis(results)
 
 if __name__ == "__main__":

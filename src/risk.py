@@ -16,6 +16,7 @@ from .config import (
 from .oracle import PriceFeed
 from .executor import TradeExecutor
 from .profit_locker import get_tradable_balance
+from .security import sanitize_sensitive_text
 
 
 @dataclass
@@ -92,6 +93,10 @@ class RiskManager:
             MAX_POSITION_USD / balance["sol_price"],
             tradable_sol * 0.8,  # Never risk more than 80% of the tradable balance
         )
+        position_notional = max_sol * balance["sol_price"]
+        if position_notional > MAX_POSITION_USD + 1e-9:
+            max_sol = MAX_POSITION_USD / balance["sol_price"]
+            position_notional = max_sol * balance["sol_price"]
         
         if max_sol < 0.001:
             print("Insufficient balance for position")
@@ -114,6 +119,7 @@ class RiskManager:
             stop_loss_pct=stop_loss_pct or (STOP_LOSS_BPS / 10000),
             take_profit_pct=take_profit_pct or (TAKE_PROFIT_BPS / 10000),
             highest_price=point.price,
+            notional=position_notional,
         )
         
         if not dry_run:
@@ -126,7 +132,7 @@ class RiskManager:
                 dry_run=False,
             )
             if result["status"] != "success":
-                print(f"Trade failed: {result.get('error', 'unknown')}")
+                print(f"Trade failed: {sanitize_sensitive_text(result.get('error', 'unknown'))}")
                 return None
             position.tx_buy = result.get("tx_signature")
         

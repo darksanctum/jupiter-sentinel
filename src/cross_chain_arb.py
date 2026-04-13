@@ -2,13 +2,13 @@
 Jupiter Sentinel - Cross-Size Route Arbitrage Detector
 Detects price differences between Jupiter routes at different trade sizes.
 """
-import json
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Optional
 
 from .config import HEADERS, JUPITER_SWAP_V1, SCAN_PAIRS
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -99,7 +99,7 @@ class CrossChainArbDetector:
                 as_legacy_transaction=False,
             )
             req = urllib.request.Request(url, headers=HEADERS)
-            payload = json.loads(urllib.request.urlopen(req, timeout=self.quote_timeout).read())
+            payload = request_json(req, timeout=self.quote_timeout, describe=f"Cross-size quote {pair_name}")
             out_amount = int(payload["outAmount"])
         except Exception:
             return None

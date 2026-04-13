@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Optional
 
 from .config import SOL_MINT, USDC_MINT
+from .resilience import request_json
 
 DEXSCREENER_BASE = "https://api.dexscreener.com"
 TOKEN_BOOSTS_TOP_URL = f"{DEXSCREENER_BASE}/token-boosts/top/v1"
@@ -140,6 +141,8 @@ class TokenDiscovery:
 
         boosted_tokens = self._fetch_boosted_tokens()
         if not boosted_tokens:
+            if self._cache is not None:
+                return list(self._cache)
             self._cache = []
             self._last_fetch = now
             return []
@@ -204,8 +207,7 @@ class TokenDiscovery:
     def _fetch_json(self, url: str, timeout: int = 10) -> Any:
         try:
             request = urllib.request.Request(url, headers=DEXSCREENER_HEADERS)
-            response = urllib.request.urlopen(request, timeout=timeout)
-            return json.loads(response.read())
+            return request_json(request, timeout=timeout, describe="DexScreener request")
         except Exception:
             return None
 

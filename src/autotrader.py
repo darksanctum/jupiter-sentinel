@@ -12,12 +12,13 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Callable, Optional
 
-from .config import DATA_DIR, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
+from .config import DATA_DIR, MAX_POSITION_USD, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
 from .executor import TradeExecutor
 from .oracle import PriceFeed
 from .regime_detector import RegimeDetector, MarketRegime
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
+from .security import display_wallet_status, sanitize_sensitive_text
 from .state_manager import StateManager
 
 SUCCESS_STATUSES = {"success", "dry_run"}
@@ -99,7 +100,7 @@ class AutoTrader:
 
         balance = self.executor.get_balance()
         self._log(
-            f"Wallet: {balance.get('address', 'unknown')} | "
+            f"Wallet: {display_wallet_status(balance.get('address', 'unknown'))} | "
             f"{balance.get('sol', 0.0):.6f} SOL (${balance.get('usd_value', 0.0):.2f})"
         )
         if self.risk_manager.positions:
@@ -221,6 +222,13 @@ class AutoTrader:
         )
         if position is None:
             self._log(f"Risk manager rejected {pair}")
+            return
+        if float(getattr(position, "notional", 0.0) or 0.0) > MAX_POSITION_USD + 1e-9:
+            self._rollback_open_position(pair, position)
+            self._log(
+                f"Blocking {pair}: hard position limit exceeded "
+                f"(${float(position.notional):.2f} > ${MAX_POSITION_USD:.2f})"
+            )
             return
 
         self.risk_manager.price_feeds[pair] = shared_feed
@@ -388,7 +396,7 @@ class AutoTrader:
 
     def _log(self, message: str) -> None:
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] {message}")
+        print(f"[{timestamp}] {sanitize_sensitive_text(message)}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

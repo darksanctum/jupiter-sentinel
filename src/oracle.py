@@ -4,13 +4,13 @@ Uses Jupiter swap quotes as a real-time price feed.
 This is creative API usage: we treat the swap engine as an oracle.
 """
 import time
-import json
 import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, USDC_MINT, SOL_MINT
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -47,7 +47,7 @@ class PriceFeed:
             )
             
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            resp = request_json(req, timeout=10, describe=f"Price feed quote {self.pair_name}")
             
             out_amount = int(resp["outAmount"])
             
@@ -72,7 +72,7 @@ class PriceFeed:
             self.history.append(point)
             return point
             
-        except Exception as e:
+        except Exception:
             return None
     
     def _get_sol_price(self) -> Optional[float]:
@@ -86,9 +86,9 @@ class PriceFeed:
                 50,
             )
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            resp = request_json(req, timeout=10, describe="SOL/USD oracle quote")
             return int(resp["outAmount"]) / 1e6 / 0.001
-        except:
+        except Exception:
             return None
     
     @property

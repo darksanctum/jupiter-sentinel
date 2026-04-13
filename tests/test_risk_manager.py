@@ -85,6 +85,7 @@ def test_open_position_caps_size_and_tracks_feed_in_dry_run(monkeypatch):
     assert position.entry_price == pytest.approx(1.23)
     assert position.entry_time == 111.0
     assert position.highest_price == pytest.approx(1.23)
+    assert position.notional == pytest.approx(5.0)
     assert position.stop_loss_pct == pytest.approx(risk.STOP_LOSS_BPS / 10000)
     assert position.take_profit_pct == pytest.approx(risk.TAKE_PROFIT_BPS / 10000)
     assert manager.positions == [position]

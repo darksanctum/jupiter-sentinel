@@ -1,35 +1,63 @@
-import time
+import json
 import logging
-from typing import Dict, Optional
+import os
+import time
+from typing import Dict, Mapping, Optional
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 from solders.signature import Signature
 from solana.rpc.core import RPCException
 
+from .resilience import call_with_retry
+from .security import sanitize_sensitive_text
+from .validation import validate_solana_address
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Known exchange hot wallets
-EXCHANGES = {
-    # Binance Hot Wallet 1
-    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdK1zV3s2pQG": "Binance",
-    # Coinbase Hot Wallet
-    "2AQdpHJ2JpcEgPiATv4VK29HMB3HXXAtoZgA9w9n89B3": "Coinbase",
-    # Kraken Hot Wallet
-    "Bg5xvKKY3mhqgcMfmLh8mnRBd55efMet2h5b8MQMbJm7": "Kraken",
-}
+EXCHANGE_WALLETS_ENV = "WHALE_WATCHER_EXCHANGES_JSON"
 
 # 1 SOL = 1,000,000,000 lamports
 LAMPORTS_PER_SOL = 1_000_000_000
 WHALE_THRESHOLD_SOL = 100.0
 
+
+def _load_exchange_wallets(exchange_wallets: Optional[Mapping[str, str]] = None) -> dict[Pubkey, str]:
+    raw_wallets = exchange_wallets
+    if raw_wallets is None:
+        raw_config = os.environ.get(EXCHANGE_WALLETS_ENV, "").strip()
+        if not raw_config:
+            return {}
+        parsed = json.loads(raw_config)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"{EXCHANGE_WALLETS_ENV} must be a JSON object mapping wallet addresses to labels")
+        raw_wallets = {str(address): str(label) for address, label in parsed.items()}
+
+    exchanges: dict[Pubkey, str] = {}
+    for address, label in raw_wallets.items():
+        validated_address = validate_solana_address(address, "exchange_wallet")
+        exchanges[Pubkey.from_string(validated_address)] = str(label)
+    return exchanges
+
 class WhaleWatcher:
-    def __init__(self, rpc_url: str = "https://api.mainnet-beta.solana.com") -> None:
+    def __init__(
+        self,
+        rpc_url: str = "https://api.mainnet-beta.solana.com",
+        *,
+        exchange_wallets: Optional[Mapping[str, str]] = None,
+    ) -> None:
         self.client = Client(rpc_url)
-        self.exchanges = {Pubkey.from_string(k): v for k, v in EXCHANGES.items()}
+        self.exchanges = _load_exchange_wallets(exchange_wallets)
         self.last_signatures: Dict[Pubkey, Optional[Signature]] = {pk: None for pk in self.exchanges.keys()}
 
     def start(self, poll_interval: int = 10) -> None:
+        if not self.exchanges:
+            logger.warning(
+                "No exchange wallets configured. Set %s or pass exchange_wallets=... to enable monitoring.",
+                EXCHANGE_WALLETS_ENV,
+            )
+            return
+
         logger.info("Starting Whale Watcher...")
         logger.info(f"Whale Threshold: {WHALE_THRESHOLD_SOL} SOL")
         
@@ -37,7 +65,7 @@ class WhaleWatcher:
             try:
                 self.check_exchanges()
             except Exception as e:
-                logger.error(f"Error checking exchanges: {e}")
+                logger.error("Error checking exchanges: %s", sanitize_sensitive_text(e))
             
             time.sleep(poll_interval)
 
@@ -53,7 +81,11 @@ class WhaleWatcher:
             kwargs["until"] = last_sig
             
         try:
-            response = self.client.get_signatures_for_address(exchange_pubkey, **kwargs)
+            response = call_with_retry(
+                lambda: self.client.get_signatures_for_address(exchange_pubkey, **kwargs),
+                logger=logger.warning,
+                describe=f"{exchange_name} signature lookup",
+            )
             if not response.value:
                 return
             
@@ -72,9 +104,9 @@ class WhaleWatcher:
                 self._process_transaction(sig_info.signature, exchange_pubkey, exchange_name)
                 
         except RPCException as e:
-            logger.error(f"RPC Error fetching signatures for {exchange_name}: {e}")
+            logger.error("RPC Error fetching signatures for %s: %s", exchange_name, sanitize_sensitive_text(e))
         except Exception as e:
-            logger.error(f"Error checking {exchange_name}: {e}")
+            logger.error("Error checking %s: %s", exchange_name, sanitize_sensitive_text(e))
 
     def _process_transaction(
         self,
@@ -84,7 +116,11 @@ class WhaleWatcher:
     ) -> None:
         try:
             # fetch transaction info
-            tx_resp = self.client.get_transaction(signature, max_supported_transaction_version=0)
+            tx_resp = call_with_retry(
+                lambda: self.client.get_transaction(signature, max_supported_transaction_version=0),
+                logger=logger.warning,
+                describe=f"{exchange_name} transaction lookup",
+            )
             if not tx_resp or not tx_resp.value:
                 return
 
@@ -122,7 +158,7 @@ class WhaleWatcher:
                     logger.info(f"Tx: https://solscan.io/tx/{signature}")
 
         except Exception as e:
-            logger.error(f"Error processing tx {signature}: {e}")
+            logger.error("Error processing tx %s: %s", signature, sanitize_sensitive_text(e))
 
 if __name__ == "__main__":
     watcher = WhaleWatcher()

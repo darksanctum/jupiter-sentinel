@@ -1,10 +1,12 @@
 import os
 import urllib.request
 import urllib.parse
-import json
 import time
 import logging
 from threading import Lock
+
+from .resilience import request_json
+from .security import sanitize_sensitive_text
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +48,14 @@ class TelegramAlerter:
             req = urllib.request.Request(url, data=data)
             
             try:
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    res = json.loads(response.read().decode())
-                    if res.get("ok"):
-                        self.last_sent_time = time.time()
-                        return True
-                    else:
-                        logger.error(f"Failed to send Telegram message: {res.get('description')}")
-                        return False
+                res = request_json(req, timeout=10, describe="Telegram sendMessage")
+                if res.get("ok"):
+                    self.last_sent_time = time.time()
+                    return True
+                logger.error("Failed to send Telegram message: %s", sanitize_sensitive_text(res.get("description")))
+                return False
             except Exception as e:
-                logger.error(f"Error sending Telegram message: {e}")
+                logger.error("Error sending Telegram message: %s", sanitize_sensitive_text(e))
                 return False
 
     def alert_position_opened(self, symbol: str, side: str, amount: float, price: float):
@@ -105,6 +105,6 @@ class TelegramAlerter:
     def alert_error(self, error_msg: str):
         msg = (
             f"⚠️ <b>Error Occurred</b>\n"
-            f"<pre>{error_msg}</pre>"
+            f"<pre>{sanitize_sensitive_text(error_msg)}</pre>"
         )
         return self._send_message(msg)

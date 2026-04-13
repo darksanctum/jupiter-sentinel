@@ -30,7 +30,7 @@ from src.executor import TradeExecutor
 from src.scanner import VolatilityScanner
 
 
-DEMO_WALLET = "DemoWallet111111111111111111111111111111111"
+DEMO_WALLET_LABEL = "demo-wallet-redacted"
 
 ORCA_PID = "Orca111111111111111111111111111111111111111"
 RAYDIUM_PID = "Rayd111111111111111111111111111111111111111"
@@ -266,7 +266,7 @@ def run_demo() -> dict[str, Any]:
 
     with patch("urllib.request.urlopen", transport.urlopen):
         executor = TradeExecutor()
-        executor.pubkey = DEMO_WALLET
+        executor.pubkey = DEMO_WALLET_LABEL
         wallet = executor.get_balance()
 
         scanner = VolatilityScanner()

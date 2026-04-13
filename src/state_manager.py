@@ -5,13 +5,19 @@ Persists bot runtime state, profit locks, and crash recovery snapshots.
 from __future__ import annotations
 
 import json
-import os
 import threading
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from .resilience import (
+    archive_corrupt_file,
+    read_json_file,
+    restore_json_from_backup,
+    write_json_state,
+)
 
 DEFAULT_LOCK_PCT = 0.5
 LOCK_PCT_ENV = "PROFIT_LOCK_PCT"
@@ -134,27 +140,13 @@ class StateManager:
         return normalized
 
     def _read_json(self, path: Path) -> dict[str, Any]:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return read_json_file(path)
 
     def _archive_corrupt_file(self, path: Path) -> Optional[Path]:
-        if not path.exists():
-            return None
-        archived = path.with_name(f"{path.name}.corrupt-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}")
-        path.replace(archived)
-        self.logger(f"Archived corrupt state file to {archived}")
-        return archived
+        return archive_corrupt_file(path, logger=self.logger)
 
     def _atomic_write(self, payload: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        serialized = json.dumps(payload, indent=2, sort_keys=True)
-
-        tmp_path = self.path.with_name(f".{self.path.name}.tmp")
-        tmp_path.write_text(serialized, encoding="utf-8")
-        os.replace(tmp_path, self.path)
-
-        backup_tmp_path = self.backup_path.with_name(f".{self.backup_path.name}.tmp")
-        backup_tmp_path.write_text(serialized, encoding="utf-8")
-        os.replace(backup_tmp_path, self.backup_path)
+        write_json_state(self.path, payload, backup_path=self.backup_path)
 
     def save(self, snapshot: Optional[dict[str, Any]]) -> dict[str, Any]:
         with self._lock:
@@ -168,6 +160,21 @@ class StateManager:
     def load(self) -> dict[str, Any]:
         with self._lock:
             if not self.path.exists():
+                if self.backup_path.exists():
+                    try:
+                        payload = self._normalize(
+                            restore_json_from_backup(
+                                self.path,
+                                backup_path=self.backup_path,
+                                default_factory=self._default_state,
+                                logger=self.logger,
+                            )
+                        )
+                    except (json.JSONDecodeError, OSError, ValueError):
+                        self._archive_corrupt_file(self.backup_path)
+                        payload = self._default_state()
+                    self._data = payload
+                    return deepcopy(self._data)
                 self._data = self._default_state()
                 return deepcopy(self._data)
 
@@ -176,18 +183,24 @@ class StateManager:
             except (json.JSONDecodeError, OSError, ValueError):
                 self._archive_corrupt_file(self.path)
 
-                if self.backup_path.exists():
-                    try:
-                        payload = self._normalize(self._read_json(self.backup_path))
-                    except (json.JSONDecodeError, OSError, ValueError):
-                        payload = self._default_state()
-                    self.save(payload)
-                else:
+                try:
+                    payload = self._normalize(
+                        restore_json_from_backup(
+                            self.path,
+                            backup_path=self.backup_path,
+                            default_factory=self._default_state,
+                            logger=self.logger,
+                        )
+                    )
+                except (json.JSONDecodeError, OSError, ValueError):
+                    if self.backup_path.exists():
+                        self._archive_corrupt_file(self.backup_path)
                     payload = self._default_state()
                     self.save(payload)
             else:
                 self._data = payload
 
+            self._data = payload
             return deepcopy(self._data)
 
     def update(self, **kwargs: Any) -> dict[str, Any]:

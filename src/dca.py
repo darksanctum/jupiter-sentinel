@@ -2,13 +2,13 @@
 Jupiter Sentinel - Dollar-Cost Averaging Bot
 Schedules regular buys using Jupiter swap.
 """
-import json
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, SOL_MINT, USDC_MINT
+from .resilience import request_json
 from .validation import build_jupiter_quote_url
 
 
@@ -58,8 +58,8 @@ class DCABot:
                 50,
             )
             req = urllib.request.Request(url, headers=HEADERS)
-            return json.loads(urllib.request.urlopen(req, timeout=10).read())
-        except:
+            return request_json(req, timeout=10, describe="DCA quote")
+        except Exception:
             return None
 
     def simulate_dca(self, input_mint: str, output_mint: str,

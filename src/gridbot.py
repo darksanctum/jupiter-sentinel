@@ -13,6 +13,13 @@ from typing import Any, Optional
 
 from .config import DATA_DIR, HEADERS, JUPITER_SWAP_V1, RPC_URL, SOL_MINT, USDC_MINT, get_pubkey
 from .executor import TradeExecutor
+from .resilience import (
+    archive_corrupt_file,
+    read_json_file,
+    request_json,
+    restore_json_from_backup,
+    write_json_state,
+)
 from .validation import build_jupiter_quote_url
 
 SUCCESS_STATUSES = {"success", "dry_run"}
@@ -636,7 +643,7 @@ class GridBot:
             slippage_bps,
         )
         req = urllib.request.Request(url, headers=HEADERS)
-        return json.loads(urllib.request.urlopen(req, timeout=15).read())
+        return request_json(req, timeout=15, describe="Jupiter grid quote")
 
     def _rpc_request(self, method: str, params: list[Any]) -> dict[str, Any]:
         body = json.dumps(
@@ -652,7 +659,7 @@ class GridBot:
             data=body,
             headers={"Content-Type": "application/json", "User-Agent": HEADERS.get("User-Agent", "JupiterSentinel/1.0")},
         )
-        response = json.loads(urllib.request.urlopen(req, timeout=15).read())
+        response = request_json(req, timeout=15, describe=f"Solana RPC {method}")
         if "error" in response:
             raise RuntimeError(str(response["error"]))
         return response.get("result", {})
@@ -694,33 +701,37 @@ class GridBot:
 
     def _read_state_payload(self) -> dict[str, Any]:
         if not self.state_path.exists():
+            backup_path = self.state_path.with_suffix(self.state_path.suffix + ".bak")
+            if backup_path.exists():
+                try:
+                    return restore_json_from_backup(
+                        self.state_path,
+                        backup_path=backup_path,
+                        default_factory=dict,
+                    )
+                except (json.JSONDecodeError, OSError, ValueError):
+                    archive_corrupt_file(backup_path)
             return {}
 
         try:
-            return json.loads(self.state_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+            return read_json_file(self.state_path)
+        except (json.JSONDecodeError, OSError, ValueError):
             backup_path = self.state_path.with_suffix(self.state_path.suffix + ".bak")
+            archive_corrupt_file(self.state_path)
             if backup_path.exists():
-                payload = json.loads(backup_path.read_text(encoding="utf-8"))
-                self.state_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-                return payload
-
-            corrupt_path = self.state_path.with_name(
-                f"{self.state_path.name}.corrupt-{int(time.time())}"
-            )
-            self.state_path.replace(corrupt_path)
+                try:
+                    return restore_json_from_backup(
+                        self.state_path,
+                        backup_path=backup_path,
+                        default_factory=dict,
+                    )
+                except (json.JSONDecodeError, OSError, ValueError):
+                    archive_corrupt_file(backup_path)
             return {}
 
     def _save_state(self) -> None:
         payload = {
             "grids": [grid.to_dict() for grid in self._grids_by_pair.values()],
         }
-        serialized = json.dumps(payload, indent=2, sort_keys=True)
-        tmp_path = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
         backup_path = self.state_path.with_suffix(self.state_path.suffix + ".bak")
-
-        if self.state_path.exists():
-            backup_path.write_text(self.state_path.read_text(encoding="utf-8"), encoding="utf-8")
-
-        tmp_path.write_text(serialized, encoding="utf-8")
-        tmp_path.replace(self.state_path)
+        write_json_state(self.state_path, payload, backup_path=backup_path)

@@ -9,9 +9,11 @@ from typing import Any, Optional
 from datetime import datetime
 
 from .config import (
-    JUPITER_SWAP_V1, HEADERS, RPC_URL,
+    JUPITER_SWAP_V1, HEADERS, MAX_POSITION_USD, RPC_URL,
     SOL_MINT, USDC_MINT, get_pubkey, load_keypair
 )
+from .resilience import request_json
+from .security import display_wallet_status, sanitize_sensitive_text
 from .validation import build_jupiter_quote_url
 
 
@@ -38,6 +40,32 @@ class TradeExecutor:
             self.keypair = load_keypair()
             self.pubkey = str(self.keypair.pubkey())
         return self.keypair
+
+    def _requires_position_limit(self, input_mint: str, output_mint: str) -> bool:
+        return input_mint in {SOL_MINT, USDC_MINT} and output_mint not in {SOL_MINT, USDC_MINT}
+
+    def _sol_price_usd(self) -> float:
+        sol_quote = self.get_quote(SOL_MINT, USDC_MINT, 1_000_000, 50)
+        if not sol_quote:
+            raise RuntimeError("Could not determine SOL price for hard position-limit enforcement")
+        return int(sol_quote["outAmount"]) / 1e6 / 0.001
+
+    def _input_notional_usd(self, input_mint: str, amount: int) -> float:
+        if input_mint == USDC_MINT:
+            return amount / 1e6
+        if input_mint == SOL_MINT:
+            return (amount / 1e9) * self._sol_price_usd()
+        raise RuntimeError(f"Unsupported mint for hard position-limit enforcement: {input_mint}")
+
+    def _enforce_hard_position_limit(self, input_mint: str, output_mint: str, amount: int) -> None:
+        if not self._requires_position_limit(input_mint, output_mint):
+            return
+
+        notional_usd = self._input_notional_usd(input_mint, amount)
+        if notional_usd > MAX_POSITION_USD + 1e-9:
+            raise ValueError(
+                f"Hard position limit exceeded: requested ${notional_usd:.2f}, max ${MAX_POSITION_USD:.2f}"
+            )
     
     def get_quote(
         self,
@@ -58,8 +86,7 @@ class TradeExecutor:
         )
         
         req = urllib.request.Request(url, headers=HEADERS)
-        resp = json.loads(urllib.request.urlopen(req, timeout=15).read())
-        return resp
+        return request_json(req, timeout=15, describe="Jupiter quote")
     
     def execute_swap(
         self,
@@ -91,6 +118,8 @@ class TradeExecutor:
         }
         
         try:
+            self._enforce_hard_position_limit(input_mint, output_mint, amount)
+
             # 1. Get quote
             quote = self.get_quote(input_mint, output_mint, amount, slippage_bps)
             if not quote:
@@ -133,7 +162,7 @@ class TradeExecutor:
             }).encode()
             
             req = urllib.request.Request(swap_url, data=swap_data, headers=HEADERS)
-            swap_resp = json.loads(urllib.request.urlopen(req, timeout=15).read())
+            swap_resp = request_json(req, timeout=15, describe="Jupiter swap transaction")
             
             # 3. Sign transaction
             tx_bytes = base58.b58decode(swap_resp["swapTransaction"])
@@ -158,7 +187,7 @@ class TradeExecutor:
                 data=rpc_body,
                 headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
             )
-            rpc_resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+            rpc_resp = request_json(req, timeout=30, describe="Solana sendTransaction")
             
             if "result" in rpc_resp:
                 result["status"] = "success"
@@ -167,13 +196,16 @@ class TradeExecutor:
                 print(f"[EXECUTED] TX: {rpc_resp['result'][:20]}...")
             else:
                 result["status"] = "failed"
-                result["error"] = rpc_resp.get("error", {}).get("message", "Unknown error")
+                result["error"] = sanitize_sensitive_text(
+                    rpc_resp.get("error", {}).get("message", "Unknown error")
+                )
                 print(f"[FAILED] {result['error']}")
             
         except Exception as e:
-            result["status"] = "error"
-            result["error"] = str(e)
-            print(f"[ERROR] {e}")
+            sanitized_error = sanitize_sensitive_text(e)
+            result["status"] = "blocked" if "Hard position limit exceeded" in sanitized_error else "error"
+            result["error"] = sanitized_error
+            print(f"[{result['status'].upper()}] {sanitized_error}")
         
         self.trade_history.append(result)
         return result
@@ -212,7 +244,10 @@ class TradeExecutor:
             data=rpc_body,
             headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
         )
-        resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        try:
+            resp = request_json(req, timeout=10, describe="Solana getBalance")
+        except Exception:
+            resp = {}
         
         sol_balance = resp.get("result", {}).get("value", 0) / 1e9
         
@@ -227,5 +262,5 @@ class TradeExecutor:
 if __name__ == "__main__":
     executor = TradeExecutor()
     balance = executor.get_balance()
-    print(f"Wallet: {balance['address']}")
+    print(f"Wallet: {display_wallet_status(balance.get('address'))}")
     print(f"Balance: {balance['sol']:.6f} SOL (${balance['usd_value']:.2f})")
