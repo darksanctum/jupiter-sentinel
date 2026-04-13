@@ -16,7 +16,7 @@ EXCHANGES = {
     # Coinbase Hot Wallet
     "2AQdpHJ2JpcEgPiATv4VK29HMB3HXXAtoZgA9w9n89B3": "Coinbase",
     # Kraken Hot Wallet
-    "5tzFkiKscXHK5ZXCGbXZzY3FZXCGbXZzY3FZXCGb": "Kraken",
+    "Bg5xvKKY3mhqgcMfmLh8mnRBd55efMet2h5b8MQMbJm7": "Kraken",
 }
 
 # 1 SOL = 1,000,000,000 lamports
