@@ -13,6 +13,7 @@ from .scanner import VolatilityScanner
 from .executor import TradeExecutor
 from .risk import RiskManager
 from .arbitrage import RouteArbitrage
+from .sentiment import SentimentAnalyzer
 
 
 class JupiterSentinel:
@@ -30,6 +31,7 @@ class JupiterSentinel:
         self.executor = TradeExecutor()
         self.risk_manager = RiskManager(self.executor)
         self.arbitrage = RouteArbitrage()
+        self.sentiment = SentimentAnalyzer()
         self.running = False
         self.cycle = 0
     
@@ -106,8 +108,11 @@ class JupiterSentinel:
         # AI decision: should we trade?
         if alert["severity"] == "HIGH" and abs(alert["change_pct"]) > 5:
             if alert["direction"] == "DOWN" and not self.dry_run:
-                # Buy the dip (contrarian)
-                print(f"  DECISION: BUY (contrarian) - price dropped significantly")
+                if self.sentiment.is_extreme_fear():
+                    print(f"  DECISION: AVOID BUY - market is in extreme fear")
+                else:
+                    # Buy the dip (contrarian)
+                    print(f"  DECISION: BUY (contrarian) - price dropped significantly")
             elif alert["direction"] == "UP" and not self.dry_run:
                 print(f"  DECISION: WATCH - momentum spike, waiting for pullback")
             else:

@@ -205,6 +205,24 @@ def get_dex_routes_panel():
     )
 
 
+def get_sentiment_panel(fng_data, trending):
+    if not fng_data:
+        return Panel(Text("Loading sentiment..."), title="Market Sentiment", border_style="yellow")
+    color = "red" if fng_data["value"] <= 25 else ("yellow" if fng_data["value"] <= 45 else ("green" if fng_data["value"] >= 55 else "white"))
+    lines = [f"[bold]Fear & Greed:[/] [{color}]{fng_data['value']} - {fng_data['classification']}[/]"]
+    if trending:
+        lines.append("")
+        lines.append("[bold dim]Trending Tokens (CoinGecko):[/]")
+        for t in trending[:3]:
+            lines.append(f"• {t['name']} ({t['symbol'].upper()})")
+    
+    return Panel(
+        Text.from_markup("\n".join(lines)),
+        title="Market Sentiment",
+        border_style="yellow"
+    )
+
+
 def generate_layout():
     layout = Layout()
     layout.split_column(
@@ -221,7 +239,8 @@ def generate_layout():
     )
     layout["right"].split_column(
         Layout(name="positions"),
-        Layout(name="routes")
+        Layout(name="routes"),
+        Layout(name="sentiment", size=8)
     )
     return layout
 
@@ -230,6 +249,9 @@ def generate_dashboard():
     if not HAS_RICH:
         print("Install rich: pip install rich")
         return
+    
+    from .sentiment import SentimentAnalyzer
+    sentiment = SentimentAnalyzer()
     
     console = Console()
     layout = generate_layout()
@@ -280,6 +302,10 @@ def generate_dashboard():
                 layout["trades"].update(Panel(get_trade_history_table(), border_style="cyan"))
                 layout["positions"].update(Panel(get_positions_table(current_price), border_style="magenta"))
                 layout["routes"].update(get_dex_routes_panel())
+                
+                fng_data = sentiment.get_fear_and_greed()
+                trending_data = sentiment.get_trending_tokens()
+                layout["sentiment"].update(get_sentiment_panel(fng_data, trending_data))
                 
                 time.sleep(1)
     except KeyboardInterrupt:
