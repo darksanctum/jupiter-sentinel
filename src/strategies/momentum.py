@@ -1,10 +1,5 @@
 """
-Momentum strategy based on trailing consecutive price increases.
-
-Signals are emitted for feeds whose latest price action shows at least three
-consecutive upward moves above a configurable minimum percentage threshold.
-Entries are expressed as staged scale-in plans rather than a single full-size
-position.
+Momentum strategy based on consecutive upward price moves over oracle history.
 """
 from __future__ import annotations
 
@@ -15,147 +10,94 @@ from typing import Any, Iterable, List, Sequence
 from ..oracle import PricePoint
 
 DEFAULT_MIN_CONSECUTIVE_INCREASES = 3
-DEFAULT_MIN_STEP_CHANGE_PCT = 1.0
-DEFAULT_SCALE_STAGES = 3
-THRESHOLD_EPSILON = 1e-9
+DEFAULT_MIN_INCREASE_PCT = 0.5
+DEFAULT_SCALE_STEPS = 4
 
 
-def _normalize_prices(values: Iterable[Any]) -> list[float]:
-    prices: list[float] = []
+def _extract_prices(values: Iterable[Any]) -> List[float]:
+    prices: List[float] = []
+
     for value in values:
-        price = float(getattr(value, "price", value))
+        price = float(getattr(value, "price", value) or 0.0)
         if not math.isfinite(price) or price <= 0:
-            raise ValueError("prices must contain only positive finite values")
+            return []
         prices.append(price)
+
     return prices
 
 
-def _step_change_pct(previous: float, current: float) -> float:
-    if previous <= 0:
-        raise ValueError("prices must contain only positive finite values")
-    return ((current - previous) / previous) * 100
+def _price_changes_pct(prices: Sequence[float]) -> List[float]:
+    changes: List[float] = []
+
+    for index in range(1, len(prices)):
+        previous_price = prices[index - 1]
+        current_price = prices[index]
+        if previous_price <= 0:
+            return []
+        changes.append(((current_price - previous_price) / previous_price) * 100)
+
+    return changes
 
 
-def _trailing_changes(prices: Sequence[float], *, min_step_change_pct: float) -> list[float]:
-    trailing_changes: list[float] = []
+def _qualifying_streak(changes_pct: Sequence[float], *, min_increase_pct: float) -> List[float]:
+    streak: List[float] = []
 
-    for index in range(len(prices) - 1, 0, -1):
-        change_pct = _step_change_pct(prices[index - 1], prices[index])
-        if prices[index] > prices[index - 1] and (change_pct + THRESHOLD_EPSILON) >= min_step_change_pct:
-            trailing_changes.append(change_pct)
+    for change_pct in reversed(changes_pct):
+        if change_pct >= min_increase_pct:
+            streak.append(change_pct)
             continue
         break
 
-    trailing_changes.reverse()
-    return trailing_changes
-
-
-def _momentum_stats(prices: Sequence[float], *, min_step_change_pct: float) -> dict[str, float]:
-    trailing_changes = _trailing_changes(prices, min_step_change_pct=min_step_change_pct)
-    if not trailing_changes:
-        return {
-            "score": 0.0,
-            "streak_count": 0.0,
-            "latest_change_pct": 0.0,
-            "average_step_change_pct": 0.0,
-            "cumulative_change_pct": 0.0,
-        }
-
-    streak_count = len(trailing_changes)
-    streak_start_price = prices[-streak_count - 1]
-    cumulative_change_pct = _step_change_pct(streak_start_price, prices[-1])
-    average_step_change_pct = sum(trailing_changes) / streak_count
-    score = min(
-        100.0,
-        (streak_count * 15.0) + (cumulative_change_pct * 6.0) + (average_step_change_pct * 8.0),
-    )
-
-    return {
-        "score": score,
-        "streak_count": float(streak_count),
-        "latest_change_pct": trailing_changes[-1],
-        "average_step_change_pct": average_step_change_pct,
-        "cumulative_change_pct": cumulative_change_pct,
-    }
-
-
-def _target_position_fraction(score: float) -> float:
-    if score >= 90.0:
-        return 1.0
-    if score >= 80.0:
-        return 0.75
-    if score >= 70.0:
-        return 0.6
-    return 0.4
-
-
-def _scale_plan(
-    *,
-    target_position_fraction: float,
-    scale_stages: int,
-    min_step_change_pct: float,
-) -> list[dict[str, Any]]:
-    weights = list(range(scale_stages, 0, -1))
-    total_weight = sum(weights)
-    plan: list[dict[str, Any]] = []
-
-    for stage, weight in enumerate(weights, start=1):
-        fraction_of_target = weight / total_weight
-        fraction_of_max = target_position_fraction * fraction_of_target
-        if stage == 1:
-            trigger = "enter_on_current_signal"
-        elif stage == 2:
-            trigger = f"add_if_next_tick_gains_at_least_{min_step_change_pct:.2f}%"
-        else:
-            trigger = (
-                f"add_if_{stage - 1}_more_consecutive_ticks_gain_"
-                f"at_least_{min_step_change_pct:.2f}%"
-            )
-
-        plan.append(
-            {
-                "stage": stage,
-                "fraction_of_target_position": fraction_of_target,
-                "fraction_of_max_position": fraction_of_max,
-                "trigger": trigger,
-            }
-        )
-
-    return plan
+    streak.reverse()
+    return streak
 
 
 def momentum_score(
-    price_points: Iterable[Any],
+    prices: Iterable[Any],
     *,
-    min_step_change_pct: float = DEFAULT_MIN_STEP_CHANGE_PCT,
+    min_increase_pct: float = DEFAULT_MIN_INCREASE_PCT,
 ) -> float:
     """
-    Score the latest trailing momentum on a 0-100 scale.
+    Return a simple trailing momentum score based on the active qualifying streak.
 
-    The score only considers the most recent uninterrupted run of price
-    increases above `min_step_change_pct`.
+    The score is the trailing streak length multiplied by the streak's average
+    percentage gain. Non-qualifying trailing moves contribute a score of 0.
     """
-    if not math.isfinite(min_step_change_pct) or min_step_change_pct < 0:
-        raise ValueError("min_step_change_pct must be a finite percentage >= 0")
+    if not math.isfinite(min_increase_pct) or min_increase_pct < 0:
+        raise ValueError("min_increase_pct must be a finite percentage >= 0")
 
-    prices = _normalize_prices(price_points)
-    if len(prices) < 2:
+    normalized_prices = _extract_prices(prices)
+    if len(normalized_prices) < 2:
         return 0.0
 
-    return _momentum_stats(prices, min_step_change_pct=min_step_change_pct)["score"]
+    changes_pct = _price_changes_pct(normalized_prices)
+    if not changes_pct:
+        return 0.0
+
+    streak_changes = _qualifying_streak(changes_pct, min_increase_pct=min_increase_pct)
+    if not streak_changes:
+        return 0.0
+
+    average_increase_pct = sum(streak_changes) / len(streak_changes)
+    return len(streak_changes) * average_increase_pct
 
 
 def _build_signal(
     *,
     pair: str,
     latest_point: PricePoint,
+    anchor_price: float,
+    score: float,
+    consecutive_increases: int,
+    streak_changes: Sequence[float],
+    min_consecutive_increases: int,
+    min_increase_pct: float,
+    max_scale_steps: int,
     history_points: int,
-    min_step_change_pct: float,
-    scale_stages: int,
-    stats: dict[str, float],
 ) -> dict[str, Any]:
-    score = stats["score"]
-    target_position_fraction = _target_position_fraction(score)
+    average_increase_pct = sum(streak_changes) / consecutive_increases
+    total_change_pct = ((latest_point.price - anchor_price) / anchor_price) * 100 if anchor_price else 0.0
+    scale_step = min(max_scale_steps, 1 + max(0, consecutive_increases - min_consecutive_increases))
 
     return {
         "timestamp": datetime.utcfromtimestamp(latest_point.timestamp).isoformat(),
@@ -165,20 +107,20 @@ def _build_signal(
         "direction": "UP",
         "action": "BUY",
         "side": "LONG",
-        "reason": "consecutive_upward_momentum",
+        "reason": "consecutive_price_increases",
         "momentum_score": score,
-        "consecutive_increases": int(stats["streak_count"]),
-        "latest_change_pct": stats["latest_change_pct"],
-        "average_step_change_pct": stats["average_step_change_pct"],
-        "cumulative_change_pct": stats["cumulative_change_pct"],
-        "threshold_pct": min_step_change_pct,
-        "target_position_fraction": target_position_fraction,
-        "entry_style": "scale_in",
-        "scale_plan": _scale_plan(
-            target_position_fraction=target_position_fraction,
-            scale_stages=scale_stages,
-            min_step_change_pct=min_step_change_pct,
-        ),
+        "consecutive_increases": consecutive_increases,
+        "recent_changes_pct": list(streak_changes),
+        "average_increase_pct": average_increase_pct,
+        "cumulative_change_pct": total_change_pct,
+        "starting_price": anchor_price,
+        "entry_mode": "SCALE_IN",
+        "scale_step": scale_step,
+        "scale_steps_total": max_scale_steps,
+        "incremental_allocation_fraction": 1 / max_scale_steps,
+        "allocation_fraction": scale_step / max_scale_steps,
+        "min_consecutive_increases": min_consecutive_increases,
+        "min_increase_pct": min_increase_pct,
         "data_points": history_points,
     }
 
@@ -187,22 +129,23 @@ def scan_for_signals(
     feeds: Iterable[Any],
     *,
     min_consecutive_increases: int = DEFAULT_MIN_CONSECUTIVE_INCREASES,
-    min_step_change_pct: float = DEFAULT_MIN_STEP_CHANGE_PCT,
-    scale_stages: int = DEFAULT_SCALE_STAGES,
+    min_increase_pct: float = DEFAULT_MIN_INCREASE_PCT,
+    max_scale_steps: int = DEFAULT_SCALE_STEPS,
 ) -> List[dict[str, Any]]:
     """
-    Scan existing `PriceFeed.history` windows for trailing upward momentum signals.
+    Scan `PriceFeed.history` sequences for strong upward momentum.
 
-    A signal is produced when the latest observed prices show at least
-    `min_consecutive_increases` consecutive gains and each gain is greater than
-    or equal to `min_step_change_pct`.
+    A signal is emitted when the trailing price series ends with at least
+    `min_consecutive_increases` consecutive gains, and each gain is at least
+    `min_increase_pct`. Signals recommend scaling in over `max_scale_steps`
+    tranches instead of taking full size immediately.
     """
-    if min_consecutive_increases < 3:
-        raise ValueError("min_consecutive_increases must be at least 3")
-    if not math.isfinite(min_step_change_pct) or min_step_change_pct < 0:
-        raise ValueError("min_step_change_pct must be a finite percentage >= 0")
-    if scale_stages < 2:
-        raise ValueError("scale_stages must be at least 2")
+    if min_consecutive_increases < 1:
+        raise ValueError("min_consecutive_increases must be at least 1")
+    if not math.isfinite(min_increase_pct) or min_increase_pct < 0:
+        raise ValueError("min_increase_pct must be a finite percentage >= 0")
+    if max_scale_steps < 1:
+        raise ValueError("max_scale_steps must be at least 1")
 
     signals: List[dict[str, Any]] = []
 
@@ -211,26 +154,38 @@ def scan_for_signals(
         if len(history) < min_consecutive_increases + 1:
             continue
 
-        try:
-            prices = _normalize_prices(history)
-        except ValueError:
+        prices = _extract_prices(history)
+        if len(prices) != len(history):
             continue
 
-        stats = _momentum_stats(prices, min_step_change_pct=min_step_change_pct)
-        if int(stats["streak_count"]) < min_consecutive_increases:
+        changes_pct = _price_changes_pct(prices)
+        if not changes_pct:
             continue
 
+        streak_changes = _qualifying_streak(changes_pct, min_increase_pct=min_increase_pct)
+        consecutive_increases = len(streak_changes)
+        if consecutive_increases < min_consecutive_increases:
+            continue
+
+        latest_point = history[-1]
+        anchor_point = history[-(consecutive_increases + 1)]
+        score = momentum_score(prices, min_increase_pct=min_increase_pct)
         signals.append(
             _build_signal(
                 pair=str(getattr(feed, "pair_name", "unknown")),
-                latest_point=history[-1],
+                latest_point=latest_point,
+                anchor_price=float(getattr(anchor_point, "price", 0.0) or 0.0),
+                score=score,
+                consecutive_increases=consecutive_increases,
+                streak_changes=streak_changes,
+                min_consecutive_increases=min_consecutive_increases,
+                min_increase_pct=min_increase_pct,
+                max_scale_steps=max_scale_steps,
                 history_points=len(history),
-                min_step_change_pct=min_step_change_pct,
-                scale_stages=scale_stages,
-                stats=stats,
             )
         )
 
+    signals.sort(key=lambda signal: signal["momentum_score"], reverse=True)
     return signals
 
 
