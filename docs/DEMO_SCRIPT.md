@@ -1,100 +1,62 @@
-# Jupiter Sentinel - 3-Minute Demo Video Script
+# 🎬 Jupiter Sentinel: 3-Minute Demo Script
 
-**Target Audience:** Superteam Earn / Jupiter "Not Your Regular Bounty" Judges
-**Goal:** Showcase the autonomous AI agent, the creative "Quotes-as-Oracle" API usage, and the dual (Web + Terminal) dashboards in under 3 minutes.
+**Target Audience:** Jupiter Bounty Judges
+**Estimated Time:** 3 minutes
+**Goal:** Showcase the autonomous nature of the agent and the innovative "Quotes-as-Oracle" architecture.
 
 ---
 
 ## ⏱️ 0:00 - 0:30 | Introduction & The "Aha!" Moment
 
-**Visual:** Speaker on camera, then transitioning to a screen recording of the project's architecture diagram (from the README or Web Dashboard).
+**Screen:** Show the GitHub README header or a title slide.
 
 **Talking Points:**
-> "Hey Jupiter team! This is Jupiter Sentinel, an autonomous AI DeFi agent built specifically for the 'Not Your Regular Bounty'. Our core innovation is asking: *What if Jupiter's swap quote engine IS the price oracle?* 
->
-> Instead of relying on a dedicated price API, Sentinel creatively repurposes the `/swap/v1/quote` endpoint. By quoting a tiny amount like 0.001 SOL every few seconds, we get a real-time, multi-pair price feed that also gives us the exact routing path and price impact. We call this the 'Quotes-as-Oracle' pattern."
+> "Hi judges! Welcome to Jupiter Sentinel, an autonomous AI DeFi agent built for the 'Not Your Regular Bounty'.
+> We started with a simple question: What if Jupiter's swap quote engine *is* the price oracle?
+> Instead of relying on paid or delayed price feeds, Sentinel repurposes Jupiter's `/swap/v1/quote` endpoint as a real-time, zero-cost, multi-pair price oracle. It gets the exact price, route, and impact for the exact liquidity pools we trade on."
 
 ---
 
-## ⏱️ 0:30 - 1:00 | Scene 1: The Terminal Dashboard
+## ⏱️ 0:30 - 1:15 | Terminal Dashboard & DEX Intelligence
 
-**Action:** Open a terminal window.
-
-**Command to run:**
-```bash
-python -m src.dashboard
-```
-
-**Visual:** The Rich terminal dashboard launches, displaying real-time market prices, wallet balance, and DEX route intelligence.
-
-**Action to Highlight:** Point out the "Source" column showing `Jupiter /quote`.
+**Command:** `python -m src.dashboard`
+**Screen:** Terminal showing the Rich dashboard with live prices and DEX routes.
 
 **Talking Points:**
-> "Let's look at the terminal dashboard. You'll notice the live market prices updating here. This isn't coming from CoinGecko or Birdeye—this is derived entirely from Jupiter Swap Quotes. 
-> 
-> We also hit the `/program-id-to-label` endpoint, giving the agent a map of over 90 DEXes across Solana. It knows exactly where the liquidity is sitting."
+> "Let's look at the Sentinel's brain. Running the dashboard, you can see real-time market prices derived purely from Jupiter swap quotes.
+> We're pulling quotes for tiny amounts like 0.001 SOL every few seconds.
+> Notice the DEX Route Intelligence. By hitting the `/program-id-to-label` endpoint, the agent maps over 90 DEXes. Raydium, Orca, Meteora... Sentinel knows them all. This is a treasure map for cross-route arbitrage."
 
 ---
 
-## ⏱️ 1:00 - 1:30 | Scene 2: The Web Dashboard
+## ⏱️ 1:15 - 2:00 | Web Dashboard & Risk Management
 
-**Action:** Open a second terminal tab and start the web dashboard.
-
-**Command to run:**
-```bash
-python -m src.web_dashboard
-```
-
-**Visual:** Open a web browser to `http://127.0.0.1:8000`. Show the professional dark-themed dashboard, Chart.js performance graph, and active positions.
-
-**Action to Highlight:** Scroll through the active positions and trade history.
+**Command:** `python -m src.web_dashboard`
+**Screen:** Browser showing `http://127.0.0.1:8000` with the Chart.js portfolio performance and active positions.
 
 **Talking Points:**
-> "For a more visual experience, we built a full FastAPI and Chart.js web dashboard. Here, you can track the agent's autonomous performance. It monitors your portfolio, shows active grid bot levels, and tracks the P&L of every dollar-cost averaging (DCA) trade. It’s a complete mission control for your autonomous agent."
+> "Because the terminal isn't enough, Sentinel also spins up a FastAPI-powered Web UI. Here we track portfolio performance, active positions, and trade history visually.
+> The agent doesn't just scan; it manages risk. It calculates dynamic position sizes based on volatility and uses trailing stops. It never risks more than a set percentage of the balance, ensuring it survives volatile market swings."
 
 ---
 
-## ⏱️ 1:30 - 2:15 | Scene 3: The Brain (Route Arbitrage)
+## ⏱️ 2:00 - 2:40 | The Autonomous Loop & Arbitrage
 
-**Action:** Stop the web dashboard, clear the terminal. 
-
-**Command to run:**
-```bash
-python demo.py
-```
-
-**Visual:** The demo script outputs the Volatility Scanner, Route Arbitrage Detector, and the Architecture Summary.
-
-**Action to Highlight:** Highlight the "ROUTE ARBITRAGE DETECTOR" section in the output.
+**Command:** `python -m src.main`
+**Screen:** Terminal showing the agent's main orchestrator loop (scanning, finding opportunities, executing) — running in dry-run mode.
 
 **Talking Points:**
-> "Now let's see how the brain works. By analyzing the `routePlan` data returned by the quote API, Sentinel discovers that routing depth varies by size. A small trade might take 3 hops for the best price, while a large trade takes a direct route. 
-> 
-> Sentinel constantly compares these different sizes to find cross-route price discrepancies. It calculates rolling volatility and looks for triangular arbitrage loops like SOL to Token to USDC and back to SOL."
+> "Here is the autonomous loop in action. The agent runs 24/7 without human intervention.
+> It performs Route Depth Analysis: it compares quotes for small amounts versus large amounts. Small sizes might route through 3 hops for the best price, while large sizes take direct routes. Sentinel detects the price discrepancies between these routes to find invisible arbitrage opportunities.
+> Once found, it auto-wraps SOL, signs, and broadcasts the transaction using the V1 Swap API."
 
 ---
 
-## ⏱️ 2:15 - 2:45 | Scene 4: Full Autonomous Execution
+## ⏱️ 2:40 - 3:00 | Conclusion & Wrap Up
 
-**Action:** Clear the terminal. Run the main agent in dry-run/safe mode.
-
-**Command to run:**
-```bash
-python -m src.main
-```
-
-**Visual:** The logs scrolling as the agent scans pairs, calculates trailing stops, and evaluates risk.
+**Screen:** Show the "Built By Hermes" section in the README or a concluding slide.
 
 **Talking Points:**
-> "Finally, here is the agent running fully autonomously. It monitors volatility across 5 pairs 24/7. When an opportunity crosses the threshold, it dynamically sizes the position, executes the swap via the Jupiter V1 API with automatic SOL wrapping, and manages the trade with trailing stops. No human intervention is required."
-
----
-
-## ⏱️ 2:45 - 3:00 | Outro
-
-**Visual:** Back to speaker on camera or the Web Dashboard overview.
-
-**Talking Points:**
-> "Jupiter Sentinel pushes the boundaries of what's possible with the Jupiter APIs by turning the routing engine into an all-in-one oracle, arbitrage detector, and execution layer. 
->
-> Oh, and one more thing: this entire project—every line of code—was built autonomously by an AI coding agent. Thanks for watching!"
+> "To sum it up: Sentinel is a complete, self-healing algorithmic trader that uses Jupiter's own routing engine as its source of truth.
+> Best of all? This entire project, from the API integrations to the dashboards, was built by an autonomous AI coding agent in a single session. No human wrote a single line of code.
+> Thank you for watching, and we hope you enjoy Jupiter Sentinel!"
