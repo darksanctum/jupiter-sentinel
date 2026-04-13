@@ -12,11 +12,14 @@ from numbers import Real
 from typing import Any
 from urllib.parse import urlencode
 
+from .jupiter_limits import JUPITER_MAX_SWAP_AMOUNT_U64
+
 
 _SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _HOSTNAME_RE = re.compile(
     r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$"
 )
+_JUPITER_SWAP_MODE_RE = re.compile(r"^Exact(In|Out)$")
 
 
 def validate_solana_address(value: Any, field_name: str = "address") -> str:
@@ -87,6 +90,8 @@ def build_jupiter_quote_url(
     amount: Any,
     slippage_bps: Any = 50,
     *,
+    swap_mode: str | None = None,
+    restrict_intermediate_tokens: bool | None = None,
     only_direct_routes: bool | None = None,
     as_legacy_transaction: bool | None = None,
 ) -> str:
@@ -94,13 +99,35 @@ def build_jupiter_quote_url(
     params: list[tuple[str, str]] = [
         ("inputMint", validate_solana_address(input_mint, "input_mint")),
         ("outputMint", validate_solana_address(output_mint, "output_mint")),
-        ("amount", str(validate_int(amount, "amount", minimum=1))),
+        (
+            "amount",
+            str(
+                validate_int(
+                    amount,
+                    "amount",
+                    minimum=1,
+                    maximum=JUPITER_MAX_SWAP_AMOUNT_U64,
+                )
+            ),
+        ),
         (
             "slippageBps",
             str(validate_int(slippage_bps, "slippage_bps", minimum=0, maximum=10_000)),
         ),
     ]
 
+    if swap_mode is not None:
+        normalized_swap_mode = str(swap_mode).strip()
+        if not _JUPITER_SWAP_MODE_RE.fullmatch(normalized_swap_mode):
+            raise ValueError("swap_mode must be ExactIn or ExactOut")
+        params.append(("swapMode", normalized_swap_mode))
+    if restrict_intermediate_tokens is not None:
+        params.append(
+            (
+                "restrictIntermediateTokens",
+                "true" if restrict_intermediate_tokens else "false",
+            )
+        )
     if only_direct_routes is not None:
         params.append(("onlyDirectRoutes", "true" if only_direct_routes else "false"))
     if as_legacy_transaction is not None:

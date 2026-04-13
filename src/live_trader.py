@@ -12,6 +12,7 @@ from src import autotrader
 from src import profit_locker
 from src import strategies
 from src import token_discovery
+from src.jupiter_limits import build_free_tier_bot_config
 from src.oracle import PriceFeed
 from src.security import sanitize_sensitive_text
 
@@ -45,15 +46,30 @@ def main() -> Any:
     args = parser.parse_args()
 
     dry_run = not args.live
+    runtime_limits = build_free_tier_bot_config(
+        requested_scan_pairs=20,
+        requested_scan_interval_seconds=args.interval,
+        quote_requests_per_pair=1,
+    )
+    effective_interval = runtime_limits.effective_scan_interval_seconds
+    effective_pair_limit = runtime_limits.max_pairs_per_scan or 20
+
     logger.info("Initializing Live Trader...")
     logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
-    logger.info(f"Interval: {args.interval} seconds")
+    logger.info(
+        "Interval: requested %s seconds, effective %s seconds",
+        args.interval,
+        effective_interval,
+    )
+    logger.info("Max Jupiter pairs per cycle on free tier: %s", effective_pair_limit)
 
     # 1. Discover trending tokens every 5 min
     discovery = token_discovery.TokenDiscovery()
 
     # 3. Executes trades via autotrader
-    trader = autotrader.AutoTrader(dry_run=dry_run, scan_interval_secs=args.interval)
+    trader = autotrader.AutoTrader(
+        dry_run=dry_run, scan_interval_secs=effective_interval
+    )
     trader.state_manager.start_autosave(
         lambda: trader.state_manager.save_trader_state(trader)
     )
@@ -71,7 +87,7 @@ def main() -> Any:
             try:
                 # Step 1: Discover trending tokens
                 logger.info("1) Discovering trending tokens...")
-                pairs = discovery.build_scan_pairs(limit=20)
+                pairs = discovery.build_scan_pairs(limit=effective_pair_limit)
                 logger.info(f"Discovered {len(pairs)} trending pairs.")
 
                 # Keep active feeds updated and track current ones
@@ -154,8 +170,8 @@ def main() -> Any:
             if args.iterations is not None and iteration >= args.iterations:
                 break
 
-            logger.info(f"Sleeping for {args.interval} seconds...")
-            time.sleep(args.interval)
+            logger.info(f"Sleeping for {effective_interval} seconds...")
+            time.sleep(effective_interval)
 
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received. Stopping...")

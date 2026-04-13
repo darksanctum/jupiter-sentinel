@@ -63,6 +63,8 @@ class PriceFeed:
                 self.output_mint,
                 amount,
                 50,
+                swap_mode="ExactIn",
+                restrict_intermediate_tokens=True,
             )
 
             req = urllib.request.Request(url, headers=HEADERS)
@@ -119,6 +121,8 @@ class PriceFeed:
                 USDC_MINT,
                 1_000_000,
                 50,
+                swap_mode="ExactIn",
+                restrict_intermediate_tokens=True,
             )
             req = urllib.request.Request(url, headers=HEADERS)
             resp = request_json(req, timeout=10, describe="SOL/USD oracle quote")

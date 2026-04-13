@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Callable, Deque, Hashable
 
+from .jupiter_limits import FREE_PLAN_REQUESTS_PER_MINUTE, FREE_PLAN_WINDOW_SECONDS
 
 QUOTE_ENDPOINT = "quote"
 SWAP_ENDPOINT = "swap"
@@ -58,12 +59,12 @@ class QuoteRequest:
 
 
 class TokenBucket:
-    """Simple token bucket for a 5 requests / 10 second style limit."""
+    """Simple token bucket for a sliding-window-style request budget."""
 
     def __init__(
         self,
-        capacity: int = 5,
-        window_seconds: float = 10.0,
+        capacity: int = FREE_PLAN_REQUESTS_PER_MINUTE,
+        window_seconds: float = float(FREE_PLAN_WINDOW_SECONDS),
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -170,8 +171,8 @@ class JupiterRateLimiter:
     def __init__(
         self,
         *,
-        max_requests: int = 5,
-        window_seconds: float = 10.0,
+        max_requests: int = FREE_PLAN_REQUESTS_PER_MINUTE,
+        window_seconds: float = float(FREE_PLAN_WINDOW_SECONDS),
         quote_batch_window_seconds: float = 0.05,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,

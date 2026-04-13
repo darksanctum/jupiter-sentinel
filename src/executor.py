@@ -103,6 +103,8 @@ class TradeExecutor:
             output_mint,
             amount,
             slippage_bps,
+            swap_mode="ExactIn",
+            restrict_intermediate_tokens=True,
             only_direct_routes=False,
             as_legacy_transaction=False,
         )

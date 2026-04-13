@@ -10,7 +10,12 @@ import json
 from datetime import datetime
 from typing import Any, Callable, List, Optional
 
-from .config import SCAN_PAIRS, SCAN_INTERVAL_SECS, VOLATILITY_THRESHOLD
+from .config import (
+    MAX_SCAN_PAIRS_PER_CYCLE,
+    SCAN_PAIRS,
+    SCAN_INTERVAL_SECS,
+    VOLATILITY_THRESHOLD,
+)
 from .oracle import PriceFeed
 
 
@@ -28,6 +33,7 @@ class VolatilityScanner:
         self.feeds: List[PriceFeed] = []
         self.alerts: List[dict] = []
         self.running = False
+        self._scan_cursor = 0
 
         for input_mint, output_mint, name in SCAN_PAIRS:
             self.feeds.append(
@@ -43,7 +49,7 @@ class VolatilityScanner:
         new_alerts = []
         timestamp = datetime.utcnow().isoformat()
 
-        for feed in self.feeds:
+        for feed in self._feeds_for_cycle():
             point = feed.fetch_price()
             if not point:
                 continue
@@ -66,6 +72,22 @@ class VolatilityScanner:
                 self.alerts.append(alert)
 
         return new_alerts
+
+    def _feeds_for_cycle(self) -> List[PriceFeed]:
+        """Select the feed subset that fits the current free-tier scan budget."""
+        if not self.feeds:
+            return []
+
+        if MAX_SCAN_PAIRS_PER_CYCLE <= 0 or MAX_SCAN_PAIRS_PER_CYCLE >= len(self.feeds):
+            return list(self.feeds)
+
+        start = self._scan_cursor % len(self.feeds)
+        selected = [
+            self.feeds[(start + offset) % len(self.feeds)]
+            for offset in range(MAX_SCAN_PAIRS_PER_CYCLE)
+        ]
+        self._scan_cursor = (start + MAX_SCAN_PAIRS_PER_CYCLE) % len(self.feeds)
+        return selected
 
     def scan_loop(
         self,
@@ -134,6 +156,7 @@ def run_standalone() -> None:
     logging.debug("%s", "Jupiter Sentinel - Volatility Scanner")
     logging.debug("%s", "=" * 50)
     logging.debug("%s", f"Monitoring {len(SCAN_PAIRS)} pairs")
+    logging.debug("%s", f"Pairs scanned per cycle: {MAX_SCAN_PAIRS_PER_CYCLE}")
     logging.debug("%s", f"Alert threshold: {VOLATILITY_THRESHOLD*100}% price change")
     logging.debug("%s", f"Scan interval: {SCAN_INTERVAL_SECS}s")
     logging.debug("")

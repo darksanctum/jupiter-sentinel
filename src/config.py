@@ -10,6 +10,7 @@ import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .jupiter_limits import build_free_tier_bot_config
 from .validation import validate_solana_address
 
 if TYPE_CHECKING:
@@ -44,8 +45,16 @@ MAX_POSITION_USD = 5.0  # Max $5 per position (we're working with small capital)
 STOP_LOSS_BPS = 500  # 5% stop loss
 TAKE_PROFIT_BPS = 1500  # 15% take profit
 VOLATILITY_THRESHOLD = 0.03  # 3% price move = volatile
-SCAN_INTERVAL_SECS = 30  # Scan every 30 seconds
+DESIRED_SCAN_INTERVAL_SECS = 30  # Requested scan cadence before limit adjustment
 PRICE_HISTORY_LEN = 60  # Keep 60 data points (30 min at 30s intervals)
+
+JUPITER_FREE_TIER_CONFIG = build_free_tier_bot_config(
+    requested_scan_pairs=len(SCAN_PAIRS),
+    requested_scan_interval_seconds=DESIRED_SCAN_INTERVAL_SECS,
+    quote_requests_per_pair=1,
+)
+SCAN_INTERVAL_SECS = JUPITER_FREE_TIER_CONFIG.effective_scan_interval_seconds
+MAX_SCAN_PAIRS_PER_CYCLE = JUPITER_FREE_TIER_CONFIG.max_pairs_per_scan
 
 # Paths
 PROJECT_DIR = Path(__file__).parent.parent
