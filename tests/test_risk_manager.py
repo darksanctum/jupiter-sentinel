@@ -118,6 +118,26 @@ def test_open_position_returns_none_when_entry_price_is_unavailable(monkeypatch)
     assert manager.price_feeds == {}
 
 
+def test_open_position_caps_size_by_tradable_balance(monkeypatch):
+    executor = FakeExecutor(balance={"sol": 10.0, "sol_price": 2.0, "usd_value": 20.0})
+    feed = FakeFeed(price=1.23)
+
+    monkeypatch.setattr(risk, "PriceFeed", lambda **kwargs: feed)
+    monkeypatch.setattr(risk, "get_tradable_balance", lambda total_balance: 0.75)
+
+    manager = RiskManager(executor)
+    position = manager.open_position(
+        pair="JUP/SOL",
+        input_mint="input-mint",
+        output_mint="output-mint",
+        amount_sol=5.0,
+        dry_run=True,
+    )
+
+    assert position is not None
+    assert position.amount_sol == pytest.approx(0.6)
+
+
 def test_open_position_executes_buy_when_not_dry_run(monkeypatch):
     executor = FakeExecutor(balance={"sol": 3.0, "sol_price": 2.0, "usd_value": 6.0})
     feed = FakeFeed(price=4.2)

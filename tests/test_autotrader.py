@@ -3,8 +3,11 @@ import sys
 from collections import deque
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import src.autotrader as autotrader
 from src.autotrader import AutoTrader
 from src.config import JUP_MINT, SOL_MINT, USDC_MINT
 from src.oracle import PricePoint
@@ -107,12 +110,12 @@ class FakeRiskManager:
         return actions
 
 
-def build_trader(tmp_path, *, executor_results=None):
+def build_trader(tmp_path, *, executor_results=None, dry_run=True):
     scanner = FakeScanner()
     executor = FakeExecutor(results=executor_results)
     risk_manager = FakeRiskManager(executor)
     trader = AutoTrader(
-        dry_run=True,
+        dry_run=dry_run,
         state_path=tmp_path / "state.json",
         scanner=scanner,
         executor=executor,
@@ -214,6 +217,61 @@ def test_monitor_positions_auto_sells_and_clears_open_position(tmp_path):
     assert state["open_positions"] == []
     assert state["closed_positions"][0]["action"]["type"] == "TAKE_PROFIT"
     assert state["closed_positions"][0]["exit_result"]["out_amount"] == 200000000
+
+
+def test_monitor_positions_locks_realized_profit_after_live_profitable_exit(tmp_path, monkeypatch):
+    locked_amounts = []
+
+    def fake_lock_profit(amount):
+        locked_amounts.append(amount)
+        return amount * 0.5
+
+    monkeypatch.setattr(autotrader, "lock_profit", fake_lock_profit)
+
+    trader, _, _, risk_manager = build_trader(
+        tmp_path,
+        dry_run=False,
+        executor_results=[
+            {
+                "status": "success",
+                "out_amount": 900000,
+                "timestamp": "2026-04-13T00:00:00",
+            },
+            {
+                "status": "success",
+                "out_amount": 300000000,
+                "timestamp": "2026-04-13T00:01:00",
+            },
+        ],
+    )
+
+    trader._handle_alert(
+        {
+            "pair": "JUP/USDC",
+            "direction": "DOWN",
+            "change_pct": -5.0,
+            "price": 1.02,
+        }
+    )
+
+    risk_manager.next_actions = [
+        {
+            "type": "TAKE_PROFIT",
+            "pair": "JUP/USDC",
+            "pnl_pct": 12.0,
+            "price": 1.20,
+        }
+    ]
+
+    trader.monitor_positions()
+
+    assert locked_amounts == [pytest.approx(0.05)]
+    assert risk_manager.closed_positions[0]["realized_profit_sol"] == pytest.approx(0.05)
+    assert risk_manager.closed_positions[0]["locked_profit_sol"] == pytest.approx(0.025)
+
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state["closed_positions"][0]["realized_profit_sol"] == pytest.approx(0.05)
+    assert state["closed_positions"][0]["locked_profit_sol"] == pytest.approx(0.025)
 
 
 def test_load_state_restores_positions_feed_history_and_trade_history(tmp_path):

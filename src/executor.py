@@ -184,7 +184,10 @@ class TradeExecutor:
             try:
                 self.pubkey = get_pubkey()
             except RuntimeError:
-                self.pubkey = ""
+                try:
+                    self._ensure_keypair()
+                except Exception:
+                    self.pubkey = ""
 
         quote = self.get_quote(SOL_MINT, USDC_MINT, 1_000_000, 50)
         sol_price = int(quote["outAmount"]) / 1e6 / 0.001 if quote else 0

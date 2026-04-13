@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 from .config import DATA_DIR, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
 from .executor import TradeExecutor
 from .oracle import PriceFeed, PricePoint
+from .profit_locker import lock_profit
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
 
@@ -282,6 +283,17 @@ class AutoTrader:
         closed_record["meta"] = dict(meta)
         closed_record["entry_result"] = dict(meta.get("entry_result", {}))
         closed_record["exit_result"] = dict(exit_result)
+
+        entry_amount_lamports = int(meta.get("entry_amount_lamports", 0) or 0)
+        exit_amount_lamports = int(exit_result.get("out_amount", 0) or 0)
+        realized_profit_sol = max((exit_amount_lamports - entry_amount_lamports) / 1e9, 0.0)
+        if realized_profit_sol > 0:
+            closed_record["realized_profit_sol"] = realized_profit_sol
+            if not self.dry_run:
+                locked_profit_sol = lock_profit(realized_profit_sol)
+                closed_record["locked_profit_sol"] = locked_profit_sol
+                self._log(f"Locked {locked_profit_sol:.6f} SOL from realized profit on {pair}")
+
         self.position_meta.pop(pair, None)
         self._log(
             f"Closed {pair} via {action.get('type', 'EXIT')} | "
@@ -380,7 +392,15 @@ class AutoTrader:
                 "action": dict(record.get("action", {})),
                 "timestamp": record.get("timestamp"),
             }
-            for key in ("meta", "entry_result", "exit_result", "notional", "pnl_amount"):
+            for key in (
+                "meta",
+                "entry_result",
+                "exit_result",
+                "notional",
+                "pnl_amount",
+                "realized_profit_sol",
+                "locked_profit_sol",
+            ):
                 if key in record:
                     payload[key] = record[key]
             closed_positions.append(payload)
@@ -468,7 +488,15 @@ class AutoTrader:
                 "action": dict(record.get("action", {})),
                 "timestamp": record.get("timestamp"),
             }
-            for key in ("meta", "entry_result", "exit_result", "notional", "pnl_amount"):
+            for key in (
+                "meta",
+                "entry_result",
+                "exit_result",
+                "notional",
+                "pnl_amount",
+                "realized_profit_sol",
+                "locked_profit_sol",
+            ):
                 if key in record:
                     restored[key] = record[key]
             self.risk_manager.closed_positions.append(restored)

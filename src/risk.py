@@ -16,6 +16,7 @@ from .config import (
 )
 from .oracle import PriceFeed
 from .executor import TradeExecutor
+from .profit_locker import get_tradable_balance
 
 
 @dataclass
@@ -83,10 +84,11 @@ class RiskManager:
         if balance["sol_price"] <= 0:
             print("Could not determine SOL price for position sizing")
             return None
+        tradable_sol = get_tradable_balance(balance.get("sol", 0.0))
         max_sol = min(
             amount_sol,
             MAX_POSITION_USD / balance["sol_price"],
-            balance["sol"] * 0.8,  # Never risk more than 80% of balance
+            tradable_sol * 0.8,  # Never risk more than 80% of the tradable balance
         )
         
         if max_sol < 0.001:
