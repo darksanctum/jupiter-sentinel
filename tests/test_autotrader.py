@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import src.risk as risk
 from src.autotrader import AutoTrader
-from src.config import JUP_MINT, SOL_MINT, USDC_MINT
+from src.config import BONK_MINT, JUP_MINT, SOL_MINT, USDC_MINT
+from src.correlation_tracker import CorrelationTracker
 from src.oracle import PricePoint
 
 
@@ -138,6 +139,7 @@ def build_trader(tmp_path, *, scanner, executor, dry_run):
         scanner=scanner,
         executor=executor,
         risk_manager=risk.RiskManager(executor),
+        correlation_tracker=CorrelationTracker(path=tmp_path / "correlations.json"),
         scan_interval_secs=1,
         sleep_fn=lambda _: None,
     )
@@ -250,6 +252,7 @@ def test_run_recovers_open_position_and_history_after_restart(tmp_path, monkeypa
         scanner=scanner_a,
         executor=executor_a,
         risk_manager=risk.RiskManager(executor_a),
+        correlation_tracker=CorrelationTracker(path=tmp_path / "correlations.json"),
         scan_interval_secs=1,
         sleep_fn=lambda _: None,
     )
@@ -287,6 +290,7 @@ def test_run_recovers_open_position_and_history_after_restart(tmp_path, monkeypa
         scanner=scanner_b,
         executor=executor_b,
         risk_manager=risk.RiskManager(executor_b),
+        correlation_tracker=CorrelationTracker(path=tmp_path / "correlations.json"),
         scan_interval_secs=1,
         sleep_fn=lambda _: None,
     )
@@ -319,3 +323,72 @@ def test_run_recovers_open_position_and_history_after_restart(tmp_path, monkeypa
     assert recovered_payload["closed_positions"][0]["action"]["type"] == "STOP_LOSS"
     assert recovered_payload["trade_history"][0]["tx_signature"] == "buy-1"
     assert recovered_payload["trade_history"][1]["tx_signature"] == "sell-1"
+
+
+def test_run_blocks_highly_correlated_second_entry(tmp_path, monkeypatch):
+    patch_entry_feed(monkeypatch, price=1.0)
+
+    scanner = MockScanner(
+        feeds=[
+            SequenceFeed(
+                "JUP/USDC",
+                JUP_MINT,
+                USDC_MINT,
+                seed_prices=[1.0, 1.1, 0.99, 1.188],
+            ),
+            SequenceFeed(
+                "BONK/USDC",
+                BONK_MINT,
+                USDC_MINT,
+                seed_prices=[2.0, 2.2, 1.98, 2.376],
+            ),
+        ],
+        alert_cycles=[
+            [build_alert(price=1.0)],
+            [
+                {
+                    "pair": "BONK/USDC",
+                    "direction": "DOWN",
+                    "change_pct": -6.0,
+                    "price": 2.376,
+                }
+            ],
+        ],
+    )
+    executor = FakeExecutor(
+        results=[
+            {
+                "status": "dry_run",
+                "out_amount": 500_000,
+                "out_usd": 5.0,
+                "tx_signature": "buy-1",
+                "timestamp": "2026-04-13T00:00:00",
+            }
+        ]
+    )
+
+    trader = AutoTrader(
+        dry_run=True,
+        state_path=tmp_path / "state.json",
+        scanner=scanner,
+        executor=executor,
+        risk_manager=risk.RiskManager(executor),
+        correlation_tracker=CorrelationTracker(path=tmp_path / "correlations.json"),
+        scan_interval_secs=1,
+        sleep_fn=lambda _: None,
+    )
+
+    trader.run(max_iterations=2)
+
+    assert [position.pair for position in trader.risk_manager.positions] == ["JUP/USDC"]
+    assert list(trader.position_meta) == ["JUP/USDC"]
+    assert executor.calls == [
+        {
+            "input_mint": SOL_MINT,
+            "output_mint": JUP_MINT,
+            "amount": 250_000_000,
+            "dry_run": True,
+        }
+    ]
+    correlations = json.loads((tmp_path / "correlations.json").read_text(encoding="utf-8"))
+    assert correlations["matrix"][JUP_MINT][BONK_MINT] == pytest.approx(1.0)

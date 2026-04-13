@@ -22,6 +22,7 @@ from .config import (
     SOL_MINT,
     USDC_MINT,
 )
+from .correlation_tracker import CorrelationTracker
 from .executor import TradeExecutor
 from .oracle import PriceFeed
 from .regime_detector import RegimeDetector, MarketRegime
@@ -58,6 +59,7 @@ class AutoTrader:
         scanner: Optional[VolatilityScanner] = None,
         executor: Optional[TradeExecutor] = None,
         risk_manager: Optional[RiskManager] = None,
+        correlation_tracker: Optional[CorrelationTracker] = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         """Function docstring."""
@@ -84,6 +86,9 @@ class AutoTrader:
         self.scanner = scanner or VolatilityScanner()
         self.executor = executor or TradeExecutor()
         self.risk_manager = risk_manager or RiskManager(self.executor)
+        self.correlation_tracker = correlation_tracker or CorrelationTracker(
+            path=DATA_DIR / "correlations.json"
+        )
         self.regime_detector = RegimeDetector()
         setattr(self.risk_manager, "state_path", self.state_path)
 
@@ -136,6 +141,7 @@ class AutoTrader:
                 try:
                     self.monitor_positions()
                     alerts = self.scanner.scan_once()
+                    self.correlation_tracker.refresh_if_due(self._feed_by_pair)
                     for alert in alerts:
                         self._handle_alert(alert)
                     self.save_state()
@@ -222,6 +228,23 @@ class AutoTrader:
         held_mint = self._derive_held_mint(scan_input_mint, scan_output_mint)
         if held_mint is None:
             self._log(f"Skipping {pair}: no non-SOL asset to trade for this pair")
+            return
+
+        self.correlation_tracker.refresh_if_due(self._feed_by_pair)
+        conflict = self.correlation_tracker.find_correlated_open_position(
+            pair,
+            scan_input_mint,
+            scan_output_mint,
+            open_positions,
+            pair_lookup=self.pair_lookup,
+            position_meta=self.position_meta,
+        )
+        if conflict is not None:
+            self._log(
+                f"Skipping {pair}: correlation {float(conflict['correlation']):.2f} "
+                f"with open {conflict['open_pair']} exceeds "
+                f"{self.correlation_tracker.threshold:.2f}"
+            )
             return
 
         shared_feed = self._ensure_scanner_feed(pair, scan_input_mint, scan_output_mint)

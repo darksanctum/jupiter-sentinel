@@ -35,11 +35,32 @@ _PREDICTOR_EXPORTS = {
     "train_direction_model_from_path",
 }
 
+_REGIME_PREDICTOR_EXPORTS = {
+    "REGIME_CLASS_NAMES",
+    "RegimeDataset",
+    "RegimeEvaluationReport",
+    "RegimePrediction",
+    "RegimePredictor",
+    "RegimeTrainingResult",
+    "RegimeTreeConfig",
+    "build_regime_dataset",
+    "build_regime_feature_row_from_history",
+    "recommended_regime_min_history",
+    "regime_feature_names",
+    "train_regime_model",
+    "train_regime_model_from_path",
+}
+
 
 def __getattr__(name: str):
     """Lazily load predictor exports so `python -m src.ml.predictor` stays clean."""
     if name in _PREDICTOR_EXPORTS:
         module = import_module(".predictor", __name__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _REGIME_PREDICTOR_EXPORTS:
+        module = import_module(".regime_predictor", __name__)
         value = getattr(module, name)
         globals()[name] = value
         return value
@@ -68,7 +89,20 @@ __all__ = [
     "extract_features_from_history",
     "feature_names",
     "infer_default_pair",
+    "REGIME_CLASS_NAMES",
+    "RegimeDataset",
+    "RegimeEvaluationReport",
+    "RegimePrediction",
+    "RegimePredictor",
+    "RegimeTrainingResult",
+    "RegimeTreeConfig",
+    "build_regime_dataset",
+    "build_regime_feature_row_from_history",
     "recommended_min_history",
+    "recommended_regime_min_history",
+    "regime_feature_names",
     "train_direction_model",
     "train_direction_model_from_path",
+    "train_regime_model",
+    "train_regime_model_from_path",
 ]
