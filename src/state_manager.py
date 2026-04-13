@@ -5,6 +5,7 @@ Persists bot runtime state, profit locks, and crash recovery snapshots.
 
 from __future__ import annotations
 import logging
+import os
 
 import json
 import threading
@@ -215,15 +216,14 @@ class StateManager:
                 self._archive_corrupt_file(self.path)
 
                 try:
-                    payload = self._normalize(
-                        restore_json_from_backup(
-                            self.path,
-                            backup_path=self.backup_path,
-                            default_factory=self._default_state,
-                            logger=self.logger,
-                        )
+                    restored = restore_json_from_backup(
+                        self.path,
+                        backup_path=self.backup_path,
+                        default_factory=self._default_state,
+                        logger=self.logger,
                     )
-                    recovered_from_backup = True
+                    payload = self._normalize(restored)
+                    recovered_from_backup = self.path.exists()
                 except (json.JSONDecodeError, OSError, ValueError):
                     if self.backup_path.exists():
                         self._archive_corrupt_file(self.backup_path)
