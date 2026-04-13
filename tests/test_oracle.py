@@ -128,6 +128,7 @@ def test_fetch_price_uses_default_decimal_normalization_for_other_outputs(monkey
 )
 def test_fetch_price_returns_none_and_preserves_history_on_errors(monkeypatch, response):
     calls = install_urlopen(monkeypatch, response)
+    monkeypatch.setattr(oracle, "fetch_dexscreener_price", lambda *args, **kwargs: None)
     feed = PriceFeed("SOL/USDC", oracle.SOL_MINT, oracle.USDC_MINT)
 
     result = feed.fetch_price()
@@ -135,6 +136,44 @@ def test_fetch_price_returns_none_and_preserves_history_on_errors(monkeypatch, r
     assert result is None
     assert list(feed.history) == []
     assert len(calls) == 1
+
+
+def test_fetch_price_falls_back_to_dexscreener_when_jupiter_is_unavailable(monkeypatch):
+    install_urlopen(monkeypatch, URLError("jupiter down"))
+    monkeypatch.setattr(
+        oracle,
+        "fetch_dexscreener_price",
+        lambda *args, **kwargs: {
+            "price": 1.75,
+            "liquidity_usd": 25_000.0,
+            "source": "dexscreener",
+        },
+    )
+    monkeypatch.setattr(oracle.time, "time", lambda: 3456.0)
+
+    feed = PriceFeed("JUP/USDC", VALID_ALT_MINT, oracle.USDC_MINT)
+    point = feed.fetch_price()
+
+    assert point == PricePoint(timestamp=3456.0, price=1.75, volume_estimate=25_000.0, source="dexscreener")
+    assert list(feed.history) == [point]
+
+
+def test_fetch_price_discards_stale_history_before_appending_fresh_quote(monkeypatch):
+    install_urlopen(monkeypatch, {"outAmount": "175000"})
+    monkeypatch.setattr(oracle.time, "time", lambda: 10_000.0)
+
+    feed = PriceFeed("SOL/USDC", oracle.SOL_MINT, oracle.USDC_MINT)
+    feed.history.append(
+        PricePoint(
+            timestamp=10_000.0 - (oracle.PRICE_STALE_AFTER_SECONDS + 1.0),
+            price=150.0,
+        )
+    )
+
+    point = feed.fetch_price()
+
+    assert point == PricePoint(timestamp=10_000.0, price=175.0)
+    assert list(feed.history) == [point]
 
 
 def test_get_sol_price_parses_quote_response(monkeypatch):

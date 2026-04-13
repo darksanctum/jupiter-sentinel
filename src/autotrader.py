@@ -16,6 +16,7 @@ from .config import DATA_DIR, MAX_POSITION_USD, SCAN_INTERVAL_SECS, SCAN_PAIRS, 
 from .executor import TradeExecutor
 from .oracle import PriceFeed
 from .regime_detector import RegimeDetector, MarketRegime
+from .resilience import has_reconcilable_transactions, reconcile_transaction_state
 from .risk import Position, RiskManager
 from .scanner import VolatilityScanner
 from .security import display_wallet_status, sanitize_sensitive_text
@@ -82,7 +83,8 @@ class AutoTrader:
         self.pair_lookup = {name: (input_mint, output_mint) for input_mint, output_mint, name in SCAN_PAIRS}
         self._feed_by_pair: dict[str, PriceFeed] = {}
         self._index_scanner_feeds()
-        self.state_manager.load_into_trader(self)
+        state = self.state_manager.load_into_trader(self)
+        self._reconcile_startup_state(state)
 
     def run(self, max_iterations: Optional[int] = None) -> None:
         """Start the continuous trading loop."""
@@ -393,6 +395,29 @@ class AutoTrader:
         if output_mint not in {SOL_MINT, USDC_MINT}:
             return output_mint
         return None
+
+    def _reconcile_startup_state(self, state: dict[str, Any]) -> None:
+        if not has_reconcilable_transactions(state):
+            return
+
+        try:
+            reconciliation = reconcile_transaction_state(state, logger=self._log)
+        except Exception as exc:
+            self._log(f"Startup reconciliation skipped: {exc}")
+            return
+
+        transactions = reconciliation.get("transactions", [])
+        if transactions:
+            pending_count = sum(1 for tx in transactions if tx.status == "pending")
+            failed_count = sum(1 for tx in transactions if tx.status == "failed")
+            self._log(
+                f"Startup reconciliation checked {len(transactions)} transaction(s): "
+                f"{pending_count} pending, {failed_count} failed"
+            )
+
+        if reconciliation.get("changed"):
+            self.state_manager.save(reconciliation["state"])
+            self.state_manager.load_into_trader(self)
 
     def _log(self, message: str) -> None:
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")

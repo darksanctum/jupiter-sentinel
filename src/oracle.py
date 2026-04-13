@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .config import JUPITER_SWAP_V1, HEADERS, USDC_MINT, SOL_MINT
-from .resilience import request_json
+from .resilience import (
+    PRICE_STALE_AFTER_SECONDS,
+    fetch_dexscreener_price,
+    prune_stale_price_history,
+    request_json,
+)
 from .validation import build_jupiter_quote_url
 
 
@@ -19,18 +24,28 @@ class PricePoint:
     timestamp: float
     price: float
     volume_estimate: float = 0.0
+    source: str = "jupiter"
 
 
-@dataclass  
+@dataclass
 class PriceFeed:
     """Rolling price feed using Jupiter quotes as oracle."""
     pair_name: str
     input_mint: str
     output_mint: str
     history: deque = field(default_factory=lambda: deque(maxlen=60))
-    
+    max_price_age_seconds: float = PRICE_STALE_AFTER_SECONDS
+
     def fetch_price(self) -> Optional[PricePoint]:
         """Get current price by quoting a small swap."""
+        now = time.time()
+        prune_stale_price_history(
+            self.history,
+            max_age_seconds=self.max_price_age_seconds,
+            now=now,
+            pair_name=self.pair_name,
+        )
+
         try:
             # Use 0.001 SOL worth as quote amount (or equivalent)
             if self.input_mint == SOL_MINT:
@@ -66,15 +81,25 @@ class PriceFeed:
                 price = out_amount / 1e6
             
             point = PricePoint(
-                timestamp=time.time(),
+                timestamp=now,
                 price=price,
             )
             self.history.append(point)
             return point
-            
         except Exception:
-            return None
-    
+            fallback = fetch_dexscreener_price(self.input_mint, self.output_mint)
+            if fallback is None:
+                return None
+
+            point = PricePoint(
+                timestamp=now,
+                price=float(fallback["price"]),
+                volume_estimate=float(fallback.get("liquidity_usd", 0.0) or 0.0),
+                source="dexscreener",
+            )
+            self.history.append(point)
+            return point
+
     def _get_sol_price(self) -> Optional[float]:
         """Get SOL/USD price."""
         try:

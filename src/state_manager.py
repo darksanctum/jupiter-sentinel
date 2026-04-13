@@ -146,7 +146,7 @@ class StateManager:
         return archive_corrupt_file(path, logger=self.logger)
 
     def _atomic_write(self, payload: dict[str, Any]) -> None:
-        write_json_state(self.path, payload, backup_path=self.backup_path)
+        write_json_state(self.path, payload, backup_path=self.backup_path, logger=self.logger)
 
     def save(self, snapshot: Optional[dict[str, Any]]) -> dict[str, Any]:
         with self._lock:
@@ -159,6 +159,8 @@ class StateManager:
 
     def load(self) -> dict[str, Any]:
         with self._lock:
+            recovered_from_backup = False
+
             if not self.path.exists():
                 if self.backup_path.exists():
                     try:
@@ -170,12 +172,16 @@ class StateManager:
                                 logger=self.logger,
                             )
                         )
+                        recovered_from_backup = True
                     except (json.JSONDecodeError, OSError, ValueError):
                         self._archive_corrupt_file(self.backup_path)
                         payload = self._default_state()
                     self._data = payload
+                    if not recovered_from_backup:
+                        self.save(payload)
                     return deepcopy(self._data)
                 self._data = self._default_state()
+                self.save(self._data)
                 return deepcopy(self._data)
 
             try:
@@ -192,14 +198,16 @@ class StateManager:
                             logger=self.logger,
                         )
                     )
+                    recovered_from_backup = True
                 except (json.JSONDecodeError, OSError, ValueError):
                     if self.backup_path.exists():
                         self._archive_corrupt_file(self.backup_path)
                     payload = self._default_state()
-                    self.save(payload)
             else:
                 self._data = payload
 
+            if not self.path.exists() and not recovered_from_backup:
+                self.save(payload)
             self._data = payload
             return deepcopy(self._data)
 
