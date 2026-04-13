@@ -9,6 +9,15 @@ from .executor import TradeExecutor
 from .analytics import TradingAnalytics
 from .arbitrage import RouteArbitrage
 from .cross_chain_arb import CrossChainArbDetector
+from .cross_chain_arbitrage import (
+    CrossChainArbitrageDetector,
+    CrossChainFeeBreakdown,
+    CrossChainFeeSchedule,
+    CrossChainPriceQuote,
+    CrossChainProfitability,
+    calculate_profitability,
+    detect_arbitrage,
+)
 from .bridge.monitor import BridgeMonitor, BridgeTransfer, BridgeTransferStatus
 from .chain.ethereum import (
     EthereumChain,

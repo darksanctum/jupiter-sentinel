@@ -95,6 +95,7 @@ class CrossChainArbDetector:
         amount: int,
     ) -> Optional[RouteQuote]:
         """Fetch and normalize a Jupiter quote for one trade size."""
+        pair_name = f"{input_mint}/{output_mint}"
         try:
             url = build_jupiter_quote_url(
                 JUPITER_SWAP_V1,
