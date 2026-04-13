@@ -36,6 +36,7 @@ from .config import (
 )
 from .resilience import request_json
 from .validation import build_jupiter_quote_url
+from .ml.signal_ensemble import SignalEnsemble, SignalDirection
 
 
 def get_sol_price() -> Optional[float]:
@@ -267,6 +268,32 @@ def get_strategy_performance_table() -> Any:
     return table
 
 
+def get_signal_ensemble_panel(ensemble: Any) -> Any:
+    """Function docstring."""
+    result = ensemble.evaluate()
+    direction = result.direction.name
+    conf = result.combined_confidence * 100
+    pos_mult = result.position_size_multiplier
+    
+    color = "green" if result.direction.value > 0 else "red" if result.direction.value < 0 else "yellow"
+    
+    content = (
+        f"[bold white]Master Signal:[/] [bold {color}]{direction}[/]\n"
+        f"[dim]Confidence:[/] [cyan]{conf:.1f}%[/]\n"
+        f"[dim]Position Size:[/] [magenta]{pos_mult:.2f}x[/]\n\n"
+        f"[bold white]Strategy Breakdown:[/]\n"
+    )
+    for name, weight in result.component_breakdown.items():
+        w_color = "green" if weight > 0 else "red" if weight < 0 else "white"
+        content += f"  {name}: [{w_color}]{weight:+.2f}[/]\n"
+        
+    return Panel(
+        Text.from_markup(content),
+        title="Signal Ensemble Brain",
+        border_style="cyan",
+    )
+
+
 def get_market_regime_panel() -> Any:
     """Function docstring."""
     regimes = [
@@ -319,6 +346,7 @@ def generate_layout() -> Any:
         Layout(name="trades"),
     )
     layout["right"].split_column(
+        Layout(name="ensemble", size=9),
         Layout(name="regime", size=7),
         Layout(name="profit_locked", size=7),
         Layout(name="strategy"),
@@ -355,6 +383,9 @@ def generate_dashboard() -> None:
 
     console.clear()
 
+    # Initialize Signal Ensemble
+    ensemble = SignalEnsemble()
+
     try:
         with Live(layout, refresh_per_second=2, screen=True):
             while True:
@@ -366,6 +397,13 @@ def generate_dashboard() -> None:
                     -10.0, 15.0
                 )
                 portfolio_history.append(current_portfolio_value)
+                
+                # Mock update ensemble signals
+                ensemble.update_signal("mean_reversion", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.3, 0.9))
+                ensemble.update_signal("momentum", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.4, 1.0))
+                ensemble.update_signal("sentiment", SignalDirection.BULLISH, random.uniform(0.5, 0.8))
+                ensemble.update_signal("ml_predictor", SignalDirection.BEARISH, random.uniform(0.6, 0.9))
+                ensemble.update_signal("regime", SignalDirection.NEUTRAL, random.uniform(0.1, 0.5))
 
                 # Update sections
                 layout["header"].update(
@@ -389,6 +427,7 @@ def generate_dashboard() -> None:
                 layout["trades"].update(
                     Panel(get_trade_history_table(), border_style="cyan")
                 )
+                layout["ensemble"].update(get_signal_ensemble_panel(ensemble))
                 layout["regime"].update(get_market_regime_panel())
                 layout["profit_locked"].update(
                     get_profit_locked_panel(current_portfolio_value)

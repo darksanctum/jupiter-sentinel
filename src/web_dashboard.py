@@ -10,6 +10,7 @@ from jinja2 import Environment, select_autoescape
 from typing import Any, Dict
 
 from .validation import validate_host, validate_port
+from .ml.signal_ensemble import SignalEnsemble, SignalDirection
 
 app = FastAPI(title="Jupiter Sentinel Dashboard")
 
@@ -37,6 +38,15 @@ def generate_mock_data() -> Dict[str, Any]:
     for _ in range(23):
         chart_data.append(chart_data[-1] * (1 + random.uniform(-0.02, 0.025)))
 
+    ensemble = SignalEnsemble()
+    ensemble.update_signal("mean_reversion", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.3, 0.9))
+    ensemble.update_signal("momentum", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.4, 1.0))
+    ensemble.update_signal("sentiment", SignalDirection.BULLISH, random.uniform(0.5, 0.8))
+    ensemble.update_signal("ml_predictor", SignalDirection.BEARISH, random.uniform(0.6, 0.9))
+    ensemble.update_signal("regime", SignalDirection.NEUTRAL, random.uniform(0.1, 0.5))
+    
+    result = ensemble.evaluate()
+
     return {
         "portfolio_value": f"${round(chart_data[-1], 2):,}",
         "24h_change": f"{round((chart_data[-1] - chart_data[0]) / chart_data[0] * 100, 2)}%",
@@ -50,6 +60,10 @@ def generate_mock_data() -> Dict[str, Any]:
         "chart_data": [round(val, 2) for val in chart_data],
         "api_status": "Operational",
         "api_latency": "124ms",
+        "ensemble_direction": result.direction.name,
+        "ensemble_confidence": result.combined_confidence,
+        "ensemble_position_size": result.position_size_multiplier,
+        "ensemble_breakdown": result.component_breakdown,
     }
 
 
@@ -117,6 +131,35 @@ HTML_TEMPLATE = """
                 <h3 class="text-gray-400 text-sm font-medium mb-1">Today's PnL</h3>
                 <div class="text-3xl font-bold text-green-500">+$142.50</div>
                 <div class="text-sm mt-2 text-gray-400">12 trades executed</div>
+            </div>
+        </div>
+
+        <!-- Signal Ensemble Section -->
+        <div class="card mb-8">
+            <h3 class="text-lg font-semibold mb-4">Signal Ensemble Brain</h3>
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-gray-400 text-sm font-medium mb-1">Master Signal</div>
+                    <div class="text-2xl font-bold {{ 'text-green-500' if data.ensemble_direction == 'BULLISH' else 'text-red-500' if data.ensemble_direction == 'BEARISH' else 'text-yellow-500' }}">
+                        {{ data.ensemble_direction | default('NEUTRAL') }}
+                    </div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-sm font-medium mb-1">Confidence</div>
+                    <div class="text-2xl font-bold text-cyan-500">{{ "%.1f"|format(data.ensemble_confidence * 100) if data.ensemble_confidence is defined else "0.0" }}%</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-sm font-medium mb-1">Position Size Multiplier</div>
+                    <div class="text-2xl font-bold text-magenta-500">{{ "%.2f"|format(data.ensemble_position_size) if data.ensemble_position_size is defined else "0.00" }}x</div>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-bordercolor grid grid-cols-2 md:grid-cols-5 gap-4">
+                {% for name, weight in (data.ensemble_breakdown or {}).items() %}
+                <div>
+                    <div class="text-xs text-gray-500">{{ name }}</div>
+                    <div class="text-sm font-medium {{ 'text-green-500' if weight > 0 else 'text-red-500' if weight < 0 else 'text-white' }}">{{ "%+.2f"|format(weight) }}</div>
+                </div>
+                {% endfor %}
             </div>
         </div>
 
