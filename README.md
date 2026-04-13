@@ -108,7 +108,7 @@ trades — all without human intervention.
 
 ```bash
 # Install dependencies
-pip install httpx solders solana base58 rich click python-dotenv
+pip install httpx solders solana base58 rich click python-dotenv fastapi uvicorn jinja2
 
 # See all features (demo mode, no wallet needed)
 python demo.py
@@ -116,9 +116,20 @@ python demo.py
 # Launch the terminal dashboard
 python -m src.dashboard
 
+# Launch the beautiful web dashboard (FastAPI + Chart.js)
+python -m src.web_dashboard
+
 # Run the full autonomous agent (dry run mode)
 python -m src.main
 ```
+
+### Web Dashboard & Screenshot Instructions
+
+We've added a professional Web Dashboard for tracking your autonomous trading bots! To view the dashboard:
+
+1. Run `python -m src.web_dashboard`
+2. Open your browser and navigate to `http://127.0.0.1:8000`
+3. Take a screenshot of the dashboard to include in your project presentation! The dashboard features a professional dark theme, real-time Chart.js portfolio performance graph, active positions, trade history, and Jupiter API status monitoring.
 
 ## Demo Output
 
