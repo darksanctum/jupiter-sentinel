@@ -2,6 +2,8 @@
 Jupiter Sentinel - Trading Analytics
 Tracks trade executions, realized performance metrics, and markdown reports.
 """
+
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -15,6 +17,7 @@ DateLike = Union[date, datetime, float, int, str]
 @dataclass
 class TradeExecution:
     """A normalized executor swap event."""
+
     timestamp: datetime
     input_mint: str
     output_mint: str
@@ -30,6 +33,7 @@ class TradeExecution:
 @dataclass
 class RealizedTrade:
     """A closed trade that can be used for performance analytics."""
+
     pair: str
     opened_at: datetime
     closed_at: datetime
@@ -43,10 +47,12 @@ class RealizedTrade:
 
     @property
     def return_decimal(self) -> float:
+        """Function docstring."""
         return self.pnl_pct / 100.0
 
     @property
     def outcome(self) -> str:
+        """Function docstring."""
         if self.pnl_pct > 0:
             return "win"
         if self.pnl_pct < 0:
@@ -55,6 +61,7 @@ class RealizedTrade:
 
 
 def _coerce_datetime(value: Optional[DateLike]) -> datetime:
+    """Function docstring."""
     if value is None:
         return datetime.utcnow()
     if isinstance(value, datetime):
@@ -75,12 +82,14 @@ def _coerce_datetime(value: Optional[DateLike]) -> datetime:
 
 
 def _coerce_date(value: DateLike) -> date:
+    """Function docstring."""
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     return _coerce_datetime(value).date()
 
 
 def _format_currency(value: Optional[float]) -> str:
+    """Function docstring."""
     if value is None:
         return "n/a"
     if value < 0:
@@ -97,7 +106,10 @@ class TradingAnalytics:
     - `realized_trades` for closed trades that can feed performance metrics
     """
 
-    def __init__(self, starting_equity: float = 1.0, periods_per_year: int = 365) -> None:
+    def __init__(
+        self, starting_equity: float = 1.0, periods_per_year: int = 365
+    ) -> None:
+        """Function docstring."""
         self.starting_equity = float(starting_equity) if starting_equity > 0 else 1.0
         self.periods_per_year = periods_per_year
         self.executions: List[TradeExecution] = []
@@ -126,7 +138,11 @@ class TradingAnalytics:
             amount=float(trade_result.get("amount", 0.0) or 0.0),
             status=trade_result.get("status", "unknown"),
             out_amount=float(trade_result.get("out_amount", 0.0) or 0.0),
-            out_usd=float(trade_result["out_usd"]) if trade_result.get("out_usd") is not None else None,
+            out_usd=(
+                float(trade_result["out_usd"])
+                if trade_result.get("out_usd") is not None
+                else None
+            ),
             price_impact=float(trade_result.get("price_impact", 0.0) or 0.0),
             tx_signature=trade_result.get("tx_signature", ""),
             metadata=metadata,
@@ -268,9 +284,14 @@ class TradingAnalytics:
                     "wins": bucket["wins"],
                     "losses": bucket["losses"],
                     "flats": bucket["flats"],
-                    "realized_pnl": bucket["cash_pnl_total"] if bucket["cash_pnl_complete"] else None,
+                    "realized_pnl": (
+                        bucket["cash_pnl_total"]
+                        if bucket["cash_pnl_complete"]
+                        else None
+                    ),
                     "return_pct": return_pct,
-                    "avg_trade_return_pct": bucket["avg_trade_return_pct"] / bucket["trade_count"],
+                    "avg_trade_return_pct": bucket["avg_trade_return_pct"]
+                    / bucket["trade_count"],
                     "cumulative_return_pct": (running_factor - 1.0) * 100.0,
                 }
             )
@@ -293,7 +314,11 @@ class TradingAnalytics:
         if volatility == 0:
             return 0.0
 
-        return (sum(excess_returns) / len(excess_returns)) / volatility * math.sqrt(self.periods_per_year)
+        return (
+            (sum(excess_returns) / len(excess_returns))
+            / volatility
+            * math.sqrt(self.periods_per_year)
+        )
 
     def equity_curve(self) -> List[Dict[str, float]]:
         """Build a simple daily equity curve using compounded daily returns."""
@@ -332,8 +357,12 @@ class TradingAnalytics:
     def summary(self) -> Dict[str, Any]:
         """Return a compact performance snapshot."""
         rows = self.daily_pnl()
-        realized_pnl_complete = rows and all(row["realized_pnl"] is not None for row in rows)
-        realized_pnl = sum(row["realized_pnl"] for row in rows) if realized_pnl_complete else None
+        realized_pnl_complete = rows and all(
+            row["realized_pnl"] is not None for row in rows
+        )
+        realized_pnl = (
+            sum(row["realized_pnl"] for row in rows) if realized_pnl_complete else None
+        )
 
         return {
             "tracked_executions": len(self.executions),
@@ -357,7 +386,9 @@ class TradingAnalytics:
             return f"{title}\n\nNo realized trades tracked."
 
         realized_pnl_complete = all(row["realized_pnl"] is not None for row in rows)
-        realized_pnl = sum(row["realized_pnl"] for row in rows) if realized_pnl_complete else None
+        realized_pnl = (
+            sum(row["realized_pnl"] for row in rows) if realized_pnl_complete else None
+        )
 
         lines = [
             title,

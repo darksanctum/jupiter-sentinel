@@ -2,7 +2,9 @@
 Jupiter Sentinel - Grid Trading Strategy
 Persistent grid trading built on top of Jupiter execution.
 """
+
 from __future__ import annotations
+import logging
 
 import json
 import time
@@ -11,7 +13,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from .config import DATA_DIR, HEADERS, JUPITER_SWAP_V1, RPC_URL, SOL_MINT, USDC_MINT, get_pubkey
+from .config import (
+    DATA_DIR,
+    HEADERS,
+    JUPITER_SWAP_V1,
+    RPC_URL,
+    SOL_MINT,
+    USDC_MINT,
+    get_pubkey,
+)
 from .executor import TradeExecutor
 from .resilience import (
     archive_corrupt_file,
@@ -55,13 +65,16 @@ class GridLevel:
 
     @property
     def funded(self) -> bool:
+        """Function docstring."""
         return self.reserved_base > 0 or self.reserved_quote > 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Function docstring."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "GridLevel":
+        """Function docstring."""
         return cls(
             price=float(payload.get("price", 0.0) or 0.0),
             amount_sol=float(payload.get("amount_sol", 0.0) or 0.0),
@@ -102,12 +115,14 @@ class GridState:
     status: str = "idle"
 
     def to_dict(self) -> dict[str, Any]:
+        """Function docstring."""
         payload = asdict(self)
         payload["levels"] = [level.to_dict() for level in self.levels]
         return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "GridState":
+        """Function docstring."""
         levels = [GridLevel.from_dict(level) for level in payload.get("levels", [])]
         range_low = float(payload.get("range_low", 0.0) or 0.0)
         range_high = float(payload.get("range_high", 0.0) or 0.0)
@@ -155,6 +170,7 @@ class GridBot:
         executor: Optional[TradeExecutor] = None,
         state_path: Path | str = DATA_DIR / "grid_state.json",
     ) -> None:
+        """Function docstring."""
         if grid_spacing_pct <= 0:
             raise ValueError("grid_spacing_pct must be positive")
         if num_levels <= 0:
@@ -175,6 +191,7 @@ class GridBot:
         self._load_state()
 
     def get_grid(self, pair: str) -> Optional[GridState]:
+        """Function docstring."""
         return self._grids_by_pair.get(pair)
 
     def get_current_price(self, input_mint: str, output_mint: str) -> Optional[float]:
@@ -188,8 +205,8 @@ class GridBot:
             if out_amount <= 0:
                 return None
 
-            base_amount = amount / (10 ** input_decimals)
-            quote_amount = out_amount / (10 ** output_decimals)
+            base_amount = amount / (10**input_decimals)
+            quote_amount = out_amount / (10**output_decimals)
             if base_amount <= 0:
                 return None
             return quote_amount / base_amount
@@ -207,7 +224,11 @@ class GridBot:
         quote_balance: Optional[float] = None,
     ) -> Optional[GridState]:
         """Create or replace a grid around the current market price."""
-        price = current_price if current_price is not None else self.get_current_price(input_mint, output_mint)
+        price = (
+            current_price
+            if current_price is not None
+            else self.get_current_price(input_mint, output_mint)
+        )
         if price is None or price <= 0:
             return None
 
@@ -233,7 +254,9 @@ class GridBot:
             status="ready",
         )
         self._set_grid_range(grid)
-        self._allocate_inventory(grid, float(base_balance or 0.0), float(quote_balance or 0.0))
+        self._allocate_inventory(
+            grid, float(base_balance or 0.0), float(quote_balance or 0.0)
+        )
         self._store_grid(grid)
         self._save_state()
         return grid
@@ -257,12 +280,14 @@ class GridBot:
             grid.status = "error"
             grid.last_error = "Unable to fetch current price"
             self._save_state()
-            return [{
-                "pair": grid.pair,
-                "status": "error",
-                "reason": grid.last_error,
-                "price": 0.0,
-            }]
+            return [
+                {
+                    "pair": grid.pair,
+                    "status": "error",
+                    "reason": grid.last_error,
+                    "price": 0.0,
+                }
+            ]
 
         return self.check_grid(grid, float(observed_price), dry_run=dry_run)
 
@@ -277,18 +302,30 @@ class GridBot:
         actions: list[dict[str, Any]] = []
         movement = current_price - (grid.last_price or grid.center_price)
         buy_levels = sorted(
-            [level for level in grid.levels if level.side == "buy" and current_price <= level.price],
+            [
+                level
+                for level in grid.levels
+                if level.side == "buy" and current_price <= level.price
+            ],
             key=lambda level: level.price,
             reverse=True,
         )
         sell_levels = sorted(
-            [level for level in grid.levels if level.side == "sell" and current_price >= level.price],
+            [
+                level
+                for level in grid.levels
+                if level.side == "sell" and current_price >= level.price
+            ],
             key=lambda level: level.price,
         )
 
-        ordered_levels = sell_levels + buy_levels if movement >= 0 else buy_levels + sell_levels
+        ordered_levels = (
+            sell_levels + buy_levels if movement >= 0 else buy_levels + sell_levels
+        )
         for level in ordered_levels:
-            actions.append(self._execute_level(grid, level, current_price, dry_run=dry_run))
+            actions.append(
+                self._execute_level(grid, level, current_price, dry_run=dry_run)
+            )
 
         if current_price < grid.range_low or current_price > grid.range_high:
             self._recenter_grid(grid, current_price)
@@ -358,7 +395,9 @@ class GridBot:
             )
             total = 0.0
             for account in response.get("value", []):
-                parsed = (((account.get("account") or {}).get("data") or {}).get("parsed") or {})
+                parsed = ((account.get("account") or {}).get("data") or {}).get(
+                    "parsed"
+                ) or {}
                 info = parsed.get("info") or {}
                 token_amount = info.get("tokenAmount") or {}
                 ui_amount = token_amount.get("uiAmount")
@@ -367,8 +406,10 @@ class GridBot:
                     continue
 
                 amount_raw = int(token_amount.get("amount", 0) or 0)
-                decimals = int(token_amount.get("decimals", self.get_token_decimals(mint)) or 0)
-                total += amount_raw / (10 ** decimals)
+                decimals = int(
+                    token_amount.get("decimals", self.get_token_decimals(mint)) or 0
+                )
+                total += amount_raw / (10**decimals)
             return total
         except Exception:
             return 0.0
@@ -389,17 +430,27 @@ class GridBot:
         return decimals
 
     def _build_levels(self, center_price: float) -> list[GridLevel]:
+        """Function docstring."""
         spacing_factor = 1 + (self.grid_spacing_pct / 100.0)
         levels: list[GridLevel] = []
         for step in range(1, self.num_levels + 1):
-            buy_price = round(center_price / (spacing_factor ** step), PRICE_ROUNDING)
-            levels.append(GridLevel(price=buy_price, amount_sol=self.amount_per_level, side="buy"))
+            buy_price = round(center_price / (spacing_factor**step), PRICE_ROUNDING)
+            levels.append(
+                GridLevel(price=buy_price, amount_sol=self.amount_per_level, side="buy")
+            )
         for step in range(1, self.num_levels + 1):
-            sell_price = round(center_price * (spacing_factor ** step), PRICE_ROUNDING)
-            levels.append(GridLevel(price=sell_price, amount_sol=self.amount_per_level, side="sell"))
+            sell_price = round(center_price * (spacing_factor**step), PRICE_ROUNDING)
+            levels.append(
+                GridLevel(
+                    price=sell_price, amount_sol=self.amount_per_level, side="sell"
+                )
+            )
         return levels
 
-    def _allocate_inventory(self, grid: GridState, base_balance: float, quote_balance: float) -> None:
+    def _allocate_inventory(
+        self, grid: GridState, base_balance: float, quote_balance: float
+    ) -> None:
+        """Function docstring."""
         for level in grid.levels:
             level.reserved_base = 0.0
             level.reserved_quote = 0.0
@@ -442,7 +493,11 @@ class GridBot:
 
         grid.unallocated_base = base_remaining
         grid.unallocated_quote = quote_remaining
-        grid.status = "ready" if any(level.funded for level in grid.levels) else "waiting_for_funds"
+        grid.status = (
+            "ready"
+            if any(level.funded for level in grid.levels)
+            else "waiting_for_funds"
+        )
         grid.last_error = ""
 
     def _execute_level(
@@ -453,6 +508,7 @@ class GridBot:
         *,
         dry_run: bool,
     ) -> dict[str, Any]:
+        """Function docstring."""
         trigger_price = level.price
         action = {
             "pair": grid.pair,
@@ -491,14 +547,18 @@ class GridBot:
             action["quote_in"] = quote_in
             if result.get("status") not in SUCCESS_STATUSES:
                 level.last_status = str(result.get("status", "failed") or "failed")
-                level.last_error = str(result.get("error", "swap failed") or "swap failed")
+                level.last_error = str(
+                    result.get("error", "swap failed") or "swap failed"
+                )
                 grid.status = "warning"
                 grid.last_error = level.last_error
                 action["status"] = level.last_status
                 action["reason"] = level.last_error
                 return action
 
-            base_out = self._from_units(int(result.get("out_amount", 0) or 0), grid.input_decimals)
+            base_out = self._from_units(
+                int(result.get("out_amount", 0) or 0), grid.input_decimals
+            )
             if base_out <= 0:
                 level.last_status = "failed"
                 level.last_error = "Jupiter returned zero output amount"
@@ -512,7 +572,9 @@ class GridBot:
             level.reserved_base = base_out
             level.cost_basis_quote = quote_in
             level.side = "sell"
-            level.price = round(trigger_price * (1 + grid.grid_spacing_pct / 100.0), PRICE_ROUNDING)
+            level.price = round(
+                trigger_price * (1 + grid.grid_spacing_pct / 100.0), PRICE_ROUNDING
+            )
             level.fill_count += 1
             level.filled = True
             level.last_status = str(result.get("status", "success") or "success")
@@ -563,7 +625,9 @@ class GridBot:
             action["reason"] = level.last_error
             return action
 
-        quote_out = self._from_units(int(result.get("out_amount", 0) or 0), grid.output_decimals)
+        quote_out = self._from_units(
+            int(result.get("out_amount", 0) or 0), grid.output_decimals
+        )
         if quote_out <= 0:
             level.last_status = "failed"
             level.last_error = "Jupiter returned zero output amount"
@@ -581,7 +645,9 @@ class GridBot:
             grid.total_pnl += realized
         level.cost_basis_quote = 0.0
         level.side = "buy"
-        level.price = round(trigger_price / (1 + grid.grid_spacing_pct / 100.0), PRICE_ROUNDING)
+        level.price = round(
+            trigger_price / (1 + grid.grid_spacing_pct / 100.0), PRICE_ROUNDING
+        )
         level.fill_count += 1
         level.filled = True
         level.last_status = str(result.get("status", "success") or "success")
@@ -599,6 +665,7 @@ class GridBot:
         return action
 
     def _recenter_grid(self, grid: GridState, current_price: float) -> None:
+        """Function docstring."""
         base_balance, quote_balance = self._reserved_inventory(grid)
         grid.center_price = current_price
         grid.levels = self._build_levels(current_price)
@@ -609,19 +676,26 @@ class GridBot:
         grid.status = "recentered"
 
     def _reserved_inventory(self, grid: GridState) -> tuple[float, float]:
-        base_total = grid.unallocated_base + sum(level.reserved_base for level in grid.levels)
-        quote_total = grid.unallocated_quote + sum(level.reserved_quote for level in grid.levels)
+        """Function docstring."""
+        base_total = grid.unallocated_base + sum(
+            level.reserved_base for level in grid.levels
+        )
+        quote_total = grid.unallocated_quote + sum(
+            level.reserved_quote for level in grid.levels
+        )
         return base_total, quote_total
 
     def _set_grid_range(self, grid: GridState) -> None:
+        """Function docstring."""
         prices = [level.price for level in grid.levels]
         grid.range_low = min(prices) if prices else 0.0
         grid.range_high = max(prices) if prices else 0.0
 
     def _price_probe_amount(self, mint: str, decimals: int) -> int:
+        """Function docstring."""
         if mint == SOL_MINT:
             return 1_000_000  # 0.001 SOL
-        return max(10 ** decimals, 1)
+        return max(10**decimals, 1)
 
     def _get_quote(
         self,
@@ -631,6 +705,7 @@ class GridBot:
         *,
         slippage_bps: int,
     ) -> dict[str, Any]:
+        """Function docstring."""
         getter = getattr(self.executor, "get_quote", None)
         if callable(getter):
             return getter(input_mint, output_mint, amount, slippage_bps)
@@ -646,6 +721,7 @@ class GridBot:
         return request_json(req, timeout=15, describe="Jupiter grid quote")
 
     def _rpc_request(self, method: str, params: list[Any]) -> dict[str, Any]:
+        """Function docstring."""
         body = json.dumps(
             {
                 "jsonrpc": "2.0",
@@ -657,7 +733,10 @@ class GridBot:
         req = urllib.request.Request(
             RPC_URL,
             data=body,
-            headers={"Content-Type": "application/json", "User-Agent": HEADERS.get("User-Agent", "JupiterSentinel/1.0")},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": HEADERS.get("User-Agent", "JupiterSentinel/1.0"),
+            },
         )
         response = request_json(req, timeout=15, describe=f"Solana RPC {method}")
         if "error" in response:
@@ -665,6 +744,7 @@ class GridBot:
         return response.get("result", {})
 
     def _get_wallet_address(self) -> str:
+        """Function docstring."""
         pubkey = str(getattr(self.executor, "pubkey", "") or "").strip()
         if pubkey:
             return pubkey
@@ -674,17 +754,21 @@ class GridBot:
             return ""
 
     def _to_units(self, amount: float, decimals: int) -> int:
-        units = int(round(max(amount, 0.0) * (10 ** decimals)))
+        """Function docstring."""
+        units = int(round(max(amount, 0.0) * (10**decimals)))
         return max(units, 0)
 
     def _from_units(self, amount: int, decimals: int) -> float:
-        return float(amount) / (10 ** decimals)
+        """Function docstring."""
+        return float(amount) / (10**decimals)
 
     def _store_grid(self, grid: GridState) -> None:
+        """Function docstring."""
         self._grids_by_pair[grid.pair] = grid
         self.grids = list(self._grids_by_pair.values())
 
     def _load_state(self) -> None:
+        """Function docstring."""
         payload = self._read_state_payload()
         raw_grids = payload.get("grids", [])
         if isinstance(raw_grids, dict):
@@ -700,6 +784,7 @@ class GridBot:
         self.grids = list(self._grids_by_pair.values())
 
     def _read_state_payload(self) -> dict[str, Any]:
+        """Function docstring."""
         if not self.state_path.exists():
             backup_path = self.state_path.with_suffix(self.state_path.suffix + ".bak")
             if backup_path.exists():
@@ -730,6 +815,7 @@ class GridBot:
             return {}
 
     def _save_state(self) -> None:
+        """Function docstring."""
         payload = {
             "grids": [grid.to_dict() for grid in self._grids_by_pair.values()],
         }

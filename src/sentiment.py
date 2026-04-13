@@ -1,15 +1,21 @@
+"""Module explaining what this file does."""
+
+import logging
 import time
 import urllib.request
 from typing import Any, Dict, List, Optional
 
 from .resilience import request_json
 
+
 class SentimentAnalyzer:
     """
     Fetches crypto market sentiment indicators like the Fear & Greed Index
     and trending tokens from CoinGecko. Caches results to avoid rate limits.
     """
+
     def __init__(self) -> None:
+        """Function docstring."""
         self.fng_cache: Optional[Dict[str, Any]] = None
         self.fng_last_fetch = 0
         self.trending_cache: Optional[List[Dict[str, Any]]] = None
@@ -24,15 +30,14 @@ class SentimentAnalyzer:
 
         try:
             req = urllib.request.Request(
-                "https://api.alternative.me/fng/",
-                headers={"User-Agent": "Mozilla/5.0"}
+                "https://api.alternative.me/fng/", headers={"User-Agent": "Mozilla/5.0"}
             )
             resp = request_json(req, timeout=5, describe="Fear and Greed index")
             data = resp.get("data", [])[0]
-            
+
             self.fng_cache = {
                 "value": int(data["value"]),
-                "classification": data["value_classification"]
+                "classification": data["value_classification"],
             }
             self.fng_last_fetch = now
             return self.fng_cache
@@ -49,26 +54,28 @@ class SentimentAnalyzer:
         try:
             req = urllib.request.Request(
                 "https://api.coingecko.com/api/v3/search/trending",
-                headers={"User-Agent": "Mozilla/5.0"}
+                headers={"User-Agent": "Mozilla/5.0"},
             )
             resp = request_json(req, timeout=5, describe="CoinGecko trending tokens")
             coins = resp.get("coins", [])
-            
+
             trending = []
             for coin in coins[:5]:  # Top 5
                 item = coin.get("item", {})
-                trending.append({
-                    "symbol": item.get("symbol"),
-                    "name": item.get("name"),
-                    "market_cap_rank": item.get("market_cap_rank")
-                })
-                
+                trending.append(
+                    {
+                        "symbol": item.get("symbol"),
+                        "name": item.get("name"),
+                        "market_cap_rank": item.get("market_cap_rank"),
+                    }
+                )
+
             self.trending_cache = trending
             self.trending_last_fetch = now
             return self.trending_cache
         except Exception:
             return list(self.trending_cache or [])
-            
+
     def is_extreme_fear(self) -> bool:
         """Helper to determine if the market is in extreme fear."""
         fng = self.get_fear_and_greed()

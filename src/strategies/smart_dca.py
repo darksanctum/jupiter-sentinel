@@ -1,7 +1,9 @@
 """
 Smart DCA strategy that adjusts recurring buy size using Bollinger Bands.
 """
+
 from __future__ import annotations
+import logging
 
 import math
 from dataclasses import dataclass, field
@@ -15,6 +17,7 @@ DEFAULT_BUY_MULTIPLIER = 2.0
 
 
 def _mean(values: Iterable[float]) -> float:
+    """Function docstring."""
     values = list(values)
     if not values:
         return 0.0
@@ -22,16 +25,18 @@ def _mean(values: Iterable[float]) -> float:
 
 
 def _population_stddev(values: Iterable[float]) -> float:
+    """Function docstring."""
     values = list(values)
     if len(values) < 2:
         return 0.0
 
     mean_value = _mean(values)
     variance = sum((value - mean_value) ** 2 for value in values) / len(values)
-    return variance ** 0.5
+    return variance**0.5
 
 
 def _normalize_price_points(values: Iterable[Any]) -> List[PricePoint]:
+    """Function docstring."""
     normalized: List[PricePoint] = []
 
     for index, value in enumerate(values):
@@ -50,6 +55,7 @@ def _bollinger_bands(
     window: int,
     stddev_multiplier: float,
 ) -> tuple[float, float, float, float]:
+    """Function docstring."""
     recent_prices = prices[-window:]
     moving_average = _mean(recent_prices)
     stddev = _population_stddev(recent_prices)
@@ -66,6 +72,7 @@ def _allocation_for_price(
     base_amount: float,
     multiplier: float,
 ) -> tuple[float, float, str]:
+    """Function docstring."""
     if price < lower_band:
         allocation_multiplier = multiplier
         reason = "price_below_lower_band"
@@ -106,12 +113,14 @@ class SmartDCAState:
     entries: List[SmartDCAEntry] = field(default_factory=list)
 
     def add_entry(self, entry: SmartDCAEntry) -> None:
+        """Function docstring."""
         self.entries.append(entry)
         self.update_stats()
         entry.accumulated_position = self.accumulated_position
         entry.average_entry_price = self.average_entry_price
 
     def update_stats(self) -> None:
+        """Function docstring."""
         if not self.entries:
             self.total_invested = 0.0
             self.accumulated_position = 0.0

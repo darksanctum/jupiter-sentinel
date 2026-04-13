@@ -3,6 +3,8 @@ Jupiter Sentinel - Risk Manager
 Manages position sizing, stop-losses, and trailing stops
 using real-time Jupiter price data.
 """
+
+import logging
 import math
 import time
 from typing import Any, Dict, List, Optional
@@ -10,8 +12,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from .config import (
-    MAX_POSITION_USD, STOP_LOSS_BPS, TAKE_PROFIT_BPS,
-    SOL_MINT, USDC_MINT, JUP_MINT, BONK_MINT,
+    MAX_POSITION_USD,
+    STOP_LOSS_BPS,
+    TAKE_PROFIT_BPS,
+    SOL_MINT,
+    USDC_MINT,
+    JUP_MINT,
+    BONK_MINT,
 )
 from .oracle import PriceFeed
 from .executor import TradeExecutor
@@ -22,6 +29,7 @@ from .security import sanitize_sensitive_text
 @dataclass
 class Position:
     """An open trading position."""
+
     pair: str
     input_mint: str
     output_mint: str
@@ -40,20 +48,21 @@ class Position:
 class RiskManager:
     """
     Manages risk across positions using Jupiter price feeds.
-    
+
     Features:
     - Position sizing based on volatility
     - Trailing stop-losses
     - Take-profit orders
     - Maximum position limits
     """
-    
+
     def __init__(self, executor: TradeExecutor) -> None:
+        """Function docstring."""
         self.executor = executor
         self.positions: List[Position] = []
         self.closed_positions: List[dict[str, Any]] = []
         self.price_feeds: Dict[str, PriceFeed] = {}
-    
+
     def open_position(
         self,
         pair: str,
@@ -66,23 +75,27 @@ class RiskManager:
     ) -> Optional[Position]:
         """
         Open a new position with risk parameters.
-        
+
         Calculates max position size based on current balance
         and volatility-adjusted risk limits.
         """
         if not math.isfinite(amount_sol) or amount_sol <= 0:
             raise ValueError("amount_sol must be a positive finite number")
-        if stop_loss_pct is not None and (not math.isfinite(stop_loss_pct) or stop_loss_pct <= 0 or stop_loss_pct >= 1):
+        if stop_loss_pct is not None and (
+            not math.isfinite(stop_loss_pct) or stop_loss_pct <= 0 or stop_loss_pct >= 1
+        ):
             raise ValueError("stop_loss_pct must be a finite decimal between 0 and 1")
         if take_profit_pct is not None and (
-            not math.isfinite(take_profit_pct) or take_profit_pct <= 0 or take_profit_pct >= 1
+            not math.isfinite(take_profit_pct)
+            or take_profit_pct <= 0
+            or take_profit_pct >= 1
         ):
             raise ValueError("take_profit_pct must be a finite decimal between 0 and 1")
 
         # Check balance
         balance = self.executor.get_balance()
         if balance["sol_price"] <= 0:
-            print("Could not determine SOL price for position sizing")
+            logging.debug("%s", "Could not determine SOL price for position sizing")
             return None
         tradable_sol = get_tradable_balance(
             balance.get("sol", 0.0),
@@ -97,18 +110,18 @@ class RiskManager:
         if position_notional > MAX_POSITION_USD + 1e-9:
             max_sol = MAX_POSITION_USD / balance["sol_price"]
             position_notional = max_sol * balance["sol_price"]
-        
+
         if max_sol < 0.001:
-            print("Insufficient balance for position")
+            logging.debug("%s", "Insufficient balance for position")
             return None
-        
+
         # Get entry price
         feed = PriceFeed(pair_name=pair, input_mint=input_mint, output_mint=output_mint)
         point = feed.fetch_price()
         if not point:
-            print("Could not get entry price")
+            logging.debug("%s", "Could not get entry price")
             return None
-        
+
         position = Position(
             pair=pair,
             input_mint=input_mint,
@@ -121,7 +134,7 @@ class RiskManager:
             highest_price=point.price,
             notional=position_notional,
         )
-        
+
         if not dry_run:
             # Execute the buy
             lamports = int(max_sol * 1e9)
@@ -132,48 +145,54 @@ class RiskManager:
                 dry_run=False,
             )
             if result["status"] != "success":
-                print(f"Trade failed: {sanitize_sensitive_text(result.get('error', 'unknown'))}")
+                logging.debug(
+                    "%s",
+                    f"Trade failed: {sanitize_sensitive_text(result.get('error', 'unknown'))}",
+                )
                 return None
             position.tx_buy = result.get("tx_signature")
-        
+
         self.positions.append(position)
         self.price_feeds[pair] = feed
-        
-        print(f"[OPEN] {pair} | {max_sol:.6f} SOL @ ${point.price:.4f}")
-        print(f"  SL: -{position.stop_loss_pct*100:.1f}% | TP: +{position.take_profit_pct*100:.1f}%")
-        
+
+        logging.debug("%s", f"[OPEN] {pair} | {max_sol:.6f} SOL @ ${point.price:.4f}")
+        logging.debug(
+            "%s",
+            f"  SL: -{position.stop_loss_pct*100:.1f}% | TP: +{position.take_profit_pct*100:.1f}%",
+        )
+
         return position
-    
+
     def check_positions(self) -> List[dict]:
         """
         Check all open positions against stop-loss and take-profit levels.
         Returns list of actions taken.
         """
         actions = []
-        
+
         for pos in self.positions[:]:
             if pos.status != "open":
                 continue
-            
+
             feed = self.price_feeds.get(pos.pair)
             if not feed:
                 continue
-            
+
             point = feed.fetch_price()
             if not point:
                 continue
-            
+
             current_price = point.price
             pnl_pct = (current_price - pos.entry_price) / pos.entry_price
-            
+
             # Update trailing stop
             if current_price > pos.highest_price:
                 pos.highest_price = current_price
-            
+
             trailing_stop_price = pos.highest_price * (1 - pos.trailing_stop_pct)
-            
+
             action = None
-            
+
             # Check stop loss
             if pnl_pct <= -pos.stop_loss_pct:
                 action = {
@@ -182,7 +201,7 @@ class RiskManager:
                     "pnl_pct": pnl_pct * 100,
                     "price": current_price,
                 }
-            
+
             # Check take profit
             elif pnl_pct >= pos.take_profit_pct:
                 action = {
@@ -191,9 +210,12 @@ class RiskManager:
                     "pnl_pct": pnl_pct * 100,
                     "price": current_price,
                 }
-            
+
             # Check trailing stop
-            elif current_price <= trailing_stop_price and pos.highest_price > pos.entry_price * 1.01:
+            elif (
+                current_price <= trailing_stop_price
+                and pos.highest_price > pos.entry_price * 1.01
+            ):
                 action = {
                     "type": "TRAILING_STOP",
                     "pair": pos.pair,
@@ -201,42 +223,47 @@ class RiskManager:
                     "price": current_price,
                     "highest": pos.highest_price,
                 }
-            
+
             if action:
-                print(
+                logging.debug(
+                    "%s",
                     f"[{action['type']}] {pos.pair} | "
-                    f"PnL: {pnl_pct*100:+.2f}% @ ${current_price:.4f}"
+                    f"PnL: {pnl_pct*100:+.2f}% @ ${current_price:.4f}",
                 )
                 pos.status = "closed"
                 self.positions.remove(pos)
-                self.closed_positions.append({
-                    "position": pos,
-                    "action": action,
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+                self.closed_positions.append(
+                    {
+                        "position": pos,
+                        "action": action,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 actions.append(action)
-        
+
         return actions
-    
+
     def get_portfolio_report(self) -> dict[str, Any]:
         """Generate portfolio status report."""
         balance = self.executor.get_balance()
-        
+
         positions_report = []
         for pos in self.positions:
             feed = self.price_feeds.get(pos.pair)
             current = feed.current_price if feed else pos.entry_price
             pnl = (current - pos.entry_price) / pos.entry_price * 100 if current else 0
-            
-            positions_report.append({
-                "pair": pos.pair,
-                "entry": pos.entry_price,
-                "current": current,
-                "pnl_pct": pnl,
-                "amount_sol": pos.amount_sol,
-                "status": pos.status,
-            })
-        
+
+            positions_report.append(
+                {
+                    "pair": pos.pair,
+                    "entry": pos.entry_price,
+                    "current": current,
+                    "pnl_pct": pnl,
+                    "amount_sol": pos.amount_sol,
+                    "status": pos.status,
+                }
+            )
+
         return {
             "wallet": balance,
             "open_positions": positions_report,
@@ -248,9 +275,12 @@ class RiskManager:
 if __name__ == "__main__":
     executor = TradeExecutor()
     rm = RiskManager(executor)
-    
+
     # Show current portfolio
     report = rm.get_portfolio_report()
-    print(f"Wallet: {report['wallet']['sol']:.6f} SOL (${report['wallet']['usd_value']:.2f})")
-    print(f"Open positions: {len(report['open_positions'])}")
-    print(f"Total trades: {report['total_trades']}")
+    logging.debug(
+        "%s",
+        f"Wallet: {report['wallet']['sol']:.6f} SOL (${report['wallet']['usd_value']:.2f})",
+    )
+    logging.debug("%s", f"Open positions: {len(report['open_positions'])}")
+    logging.debug("%s", f"Total trades: {report['total_trades']}")

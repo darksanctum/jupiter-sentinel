@@ -3,6 +3,9 @@ Jupiter Sentinel - Price Oracle
 Uses Jupiter swap quotes as a real-time price feed.
 This is creative API usage: we treat the swap engine as an oracle.
 """
+
+import logging
+from typing import Any
 import time
 import urllib.request
 from collections import deque
@@ -30,6 +33,7 @@ class PricePoint:
 @dataclass
 class PriceFeed:
     """Rolling price feed using Jupiter quotes as oracle."""
+
     pair_name: str
     input_mint: str
     output_mint: str
@@ -52,7 +56,7 @@ class PriceFeed:
                 amount = 1_000_000  # 0.001 SOL
             else:
                 amount = 1_000_000  # 1 unit
-            
+
             url = build_jupiter_quote_url(
                 JUPITER_SWAP_V1,
                 self.input_mint,
@@ -60,16 +64,22 @@ class PriceFeed:
                 amount,
                 50,
             )
-            
+
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = request_json(req, timeout=10, describe=f"Price feed quote {self.pair_name}")
-            
+            resp = request_json(
+                req, timeout=10, describe=f"Price feed quote {self.pair_name}"
+            )
+
             out_amount = int(resp["outAmount"])
-            
+
             # Normalize to USD price
             if self.output_mint == USDC_MINT:
                 # Output is already in USDC (6 decimals)
-                price = out_amount / 1e6 / (amount / 1e9) if self.input_mint == SOL_MINT else out_amount / 1e6
+                price = (
+                    out_amount / 1e6 / (amount / 1e9)
+                    if self.input_mint == SOL_MINT
+                    else out_amount / 1e6
+                )
             elif self.output_mint == SOL_MINT:
                 # Need to get SOL price separately
                 sol_price = self._get_sol_price()
@@ -79,7 +89,7 @@ class PriceFeed:
                     price = 0
             else:
                 price = out_amount / 1e6
-            
+
             point = PricePoint(
                 timestamp=now,
                 price=price,
@@ -115,29 +125,32 @@ class PriceFeed:
             return int(resp["outAmount"]) / 1e6 / 0.001
         except Exception:
             return None
-    
+
     @property
     def current_price(self) -> Optional[float]:
+        """Function docstring."""
         if self.history:
             return self.history[-1].price
         return None
-    
+
     @property
     def volatility(self) -> float:
         """Calculate rolling volatility (std dev of returns)."""
         if len(self.history) < 3:
             return 0.0
-        
+
         prices = [p.price for p in self.history]
-        returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))]
-        
+        returns = [
+            (prices[i] - prices[i - 1]) / prices[i - 1] for i in range(1, len(prices))
+        ]
+
         if not returns:
             return 0.0
-        
+
         mean = sum(returns) / len(returns)
         variance = sum((r - mean) ** 2 for r in returns) / len(returns)
-        return variance ** 0.5
-    
+        return variance**0.5
+
     @property
     def price_change_pct(self) -> float:
         """Price change over the tracked period."""
@@ -148,8 +161,9 @@ class PriceFeed:
         if first == 0:
             return 0.0
         return (last - first) / first
-    
+
     def stats(self) -> dict:
+        """Function docstring."""
         return {
             "pair": self.pair_name,
             "price": self.current_price,

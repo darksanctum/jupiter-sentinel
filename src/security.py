@@ -1,7 +1,9 @@
 """
 Security helpers for redacting secrets and avoiding wallet exposure in logs.
 """
+
 from __future__ import annotations
+import logging
 
 import os
 import re
@@ -16,11 +18,15 @@ _SECRET_ENV_VARS = (
     "SOLANA_PRIVATE_KEY_PATH",
     "TELEGRAM_BOT_TOKEN",
 )
-_BOT_TOKEN_IN_URL = re.compile(r"(https://api\.telegram\.org/bot)([^/\s]+)", re.IGNORECASE)
+_BOT_TOKEN_IN_URL = re.compile(
+    r"(https://api\.telegram\.org/bot)([^/\s]+)", re.IGNORECASE
+)
 _KEY_VALUE_PATTERN = re.compile(
     r"(?i)\b(api[_-]?key|private[_ -]?key|secret|token|mnemonic|seed phrase)\b\s*[:=]\s*([^\s,;]+)"
 )
-_LONG_BASE58_PATTERN = re.compile(r"(?<![A-Za-z0-9])[1-9A-HJ-NP-Za-km-z]{80,128}(?![A-Za-z0-9])")
+_LONG_BASE58_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])[1-9A-HJ-NP-Za-km-z]{80,128}(?![A-Za-z0-9])"
+)
 
 
 def sanitize_sensitive_text(value: Any) -> str:
@@ -44,8 +50,8 @@ def sanitize_sensitive_text(value: Any) -> str:
 
 
 def display_wallet_status(address: Any) -> str:
+    """Function docstring."""
     text = str(address or "").strip()
     if not text or text == "unconfigured":
         return "unconfigured"
     return "configured (redacted)"
-

@@ -1,3 +1,6 @@
+"""Module explaining what this file does."""
+
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 import uvicorn
@@ -10,38 +13,45 @@ from .validation import validate_host, validate_port
 
 app = FastAPI(title="Jupiter Sentinel Dashboard")
 
+
 def generate_mock_data() -> Dict[str, Any]:
+    """Function docstring."""
     now = datetime.now()
     history = []
     for i in range(10):
-        history.append({
-            "time": (now - timedelta(minutes=i*15)).strftime("%Y-%m-%d %H:%M:%S"),
-            "pair": random.choice(["SOL/USDC", "BONK/SOL", "JUP/USDC", "WIF/SOL"]),
-            "type": random.choice(["BUY", "SELL"]),
-            "amount": round(random.uniform(0.1, 10.0), 2),
-            "price": round(random.uniform(0.001, 150.0), 4),
-            "pnl": round(random.uniform(-5.0, 15.0), 2)
-        })
-        
-    chart_labels = [(now - timedelta(hours=i)).strftime("%H:%M") for i in range(24, 0, -1)]
+        history.append(
+            {
+                "time": (now - timedelta(minutes=i * 15)).strftime("%Y-%m-%d %H:%M:%S"),
+                "pair": random.choice(["SOL/USDC", "BONK/SOL", "JUP/USDC", "WIF/SOL"]),
+                "type": random.choice(["BUY", "SELL"]),
+                "amount": round(random.uniform(0.1, 10.0), 2),
+                "price": round(random.uniform(0.001, 150.0), 4),
+                "pnl": round(random.uniform(-5.0, 15.0), 2),
+            }
+        )
+
+    chart_labels = [
+        (now - timedelta(hours=i)).strftime("%H:%M") for i in range(24, 0, -1)
+    ]
     chart_data = [10000]
     for _ in range(23):
         chart_data.append(chart_data[-1] * (1 + random.uniform(-0.02, 0.025)))
-        
+
     return {
         "portfolio_value": f"${round(chart_data[-1], 2):,}",
         "24h_change": f"{round((chart_data[-1] - chart_data[0]) / chart_data[0] * 100, 2)}%",
         "open_positions": [
             {"asset": "SOL", "amount": 45.2, "value": "$6,780.00", "pnl": "+5.2%"},
             {"asset": "JUP", "amount": 1500.0, "value": "$1,200.00", "pnl": "-1.5%"},
-            {"asset": "BONK", "amount": 5000000.0, "value": "$85.00", "pnl": "+12.4%"}
+            {"asset": "BONK", "amount": 5000000.0, "value": "$85.00", "pnl": "+12.4%"},
         ],
         "trade_history": history,
         "chart_labels": chart_labels,
         "chart_data": [round(val, 2) for val in chart_data],
         "api_status": "Operational",
-        "api_latency": "124ms"
+        "api_latency": "124ms",
     }
+
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -253,17 +263,22 @@ _TEMPLATE_ENV = Environment(
 )
 _DASHBOARD_TEMPLATE = _TEMPLATE_ENV.from_string(HTML_TEMPLATE)
 
+
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard() -> HTMLResponse:
+    """Function docstring."""
     data = generate_mock_data()
     html_content = _DASHBOARD_TEMPLATE.render(data=data)
     return HTMLResponse(content=html_content)
 
+
 def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Function docstring."""
     host = validate_host(host)
     port = validate_port(port)
-    print(f"Starting web dashboard on http://{host}:{port}")
+    logging.debug("%s", f"Starting web dashboard on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
+
 
 if __name__ == "__main__":
     start_server()

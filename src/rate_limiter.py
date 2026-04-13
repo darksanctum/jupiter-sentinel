@@ -5,7 +5,9 @@ Jupiter does not expose a bulk quote endpoint. "Batching" here means
 coalescing identical pending quote requests into a single outbound call and
 sharing the result with every waiter.
 """
+
 from __future__ import annotations
+import logging
 
 import heapq
 import threading
@@ -44,6 +46,7 @@ class QuoteRequest:
 
     @property
     def batch_key(self) -> tuple[Any, ...]:
+        """Function docstring."""
         return (
             self.input_mint,
             self.output_mint,
@@ -64,6 +67,7 @@ class TokenBucket:
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Function docstring."""
         if capacity <= 0:
             raise ValueError("capacity must be positive")
         if window_seconds <= 0:
@@ -77,17 +81,22 @@ class TokenBucket:
         self._updated_at = self._clock()
 
     def _refill(self, now: float) -> None:
+        """Function docstring."""
         elapsed = max(0.0, now - self._updated_at)
         if elapsed:
-            self._tokens = min(self.capacity, self._tokens + (elapsed * self.refill_rate))
+            self._tokens = min(
+                self.capacity, self._tokens + (elapsed * self.refill_rate)
+            )
             self._updated_at = now
 
     def available_tokens(self, *, now: float | None = None) -> float:
+        """Function docstring."""
         current_time = self._clock() if now is None else now
         self._refill(current_time)
         return self._tokens
 
     def consume(self, tokens: float = 1.0, *, now: float | None = None) -> bool:
+        """Function docstring."""
         if tokens <= 0:
             raise ValueError("tokens must be positive")
 
@@ -99,7 +108,10 @@ class TokenBucket:
         self._tokens -= tokens
         return True
 
-    def time_until_available(self, tokens: float = 1.0, *, now: float | None = None) -> float:
+    def time_until_available(
+        self, tokens: float = 1.0, *, now: float | None = None
+    ) -> float:
+        """Function docstring."""
         if tokens <= 0:
             raise ValueError("tokens must be positive")
 
@@ -164,6 +176,7 @@ class JupiterRateLimiter:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Function docstring."""
         if quote_batch_window_seconds < 0:
             raise ValueError("quote_batch_window_seconds cannot be negative")
 
@@ -210,7 +223,12 @@ class JupiterRateLimiter:
                         existing.version += 1
                         heapq.heappush(
                             self._queue,
-                            (existing.priority, existing.sequence, existing.version, existing),
+                            (
+                                existing.priority,
+                                existing.sequence,
+                                existing.version,
+                                existing,
+                            ),
                         )
                     return future
 
@@ -220,14 +238,18 @@ class JupiterRateLimiter:
                 operation=operation,
                 priority=int(priority),
                 queued_at=now,
-                ready_at=now + (self._quote_batch_window_seconds if batch_key is not None else 0.0),
+                ready_at=now
+                + (self._quote_batch_window_seconds if batch_key is not None else 0.0),
                 sequence=self._sequence,
                 waiters=[future],
                 batch_key=batch_key,
             )
             self._sequence += 1
 
-            heapq.heappush(self._queue, (request.priority, request.sequence, request.version, request))
+            heapq.heappush(
+                self._queue,
+                (request.priority, request.sequence, request.version, request),
+            )
             if batch_lookup is not None:
                 self._pending_batches[batch_lookup] = request
 
@@ -258,7 +280,9 @@ class JupiterRateLimiter:
         timeout: float | None = None,
     ) -> Any:
         """Queue a request and block until its future is resolved."""
-        future = self.submit(endpoint, operation, priority=priority, batch_key=batch_key)
+        future = self.submit(
+            endpoint, operation, priority=priority, batch_key=batch_key
+        )
         deadline = None if timeout is None else self._clock() + timeout
 
         while True:
@@ -272,7 +296,9 @@ class JupiterRateLimiter:
             if deadline is not None:
                 remaining = deadline - self._clock()
                 if remaining <= 0:
-                    raise TimeoutError(f"Timed out waiting for {endpoint} request to run")
+                    raise TimeoutError(
+                        f"Timed out waiting for {endpoint} request to run"
+                    )
                 sleep_for = min(sleep_for, remaining)
 
             self._sleep(sleep_for)
@@ -314,7 +340,9 @@ class JupiterRateLimiter:
                 self._pending_batches.pop((request.endpoint, request.batch_key), None)
 
             stats = self._stats[request.endpoint]
-            stats.queued_requests = max(0, stats.queued_requests - request.submitted_requests)
+            stats.queued_requests = max(
+                0, stats.queued_requests - request.submitted_requests
+            )
             stats.started_calls += 1
             stats.last_called_at = now
             stats.recent_call_timestamps.append(now)
@@ -334,7 +362,9 @@ class JupiterRateLimiter:
 
         return True
 
-    def run_until_idle(self, *, block: bool = False, max_calls: int | None = None) -> int:
+    def run_until_idle(
+        self, *, block: bool = False, max_calls: int | None = None
+    ) -> int:
         """
         Drain the queue until nothing else can run immediately.
 
@@ -410,11 +440,14 @@ class JupiterRateLimiter:
 
             return {
                 "available_tokens": self._bucket.available_tokens(now=now),
-                "pending_requests": sum(stats.queued_requests for stats in self._stats.values()),
+                "pending_requests": sum(
+                    stats.queued_requests for stats in self._stats.values()
+                ),
                 "endpoints": endpoints,
             }
 
     def _peek_next_valid_request(self) -> _QueuedRequest | None:
+        """Function docstring."""
         while self._queue:
             priority, sequence, version, request = self._queue[0]
             if request.dispatched or request.version != version:
@@ -427,6 +460,7 @@ class JupiterRateLimiter:
         return None
 
     def _prune_call_window(self, stats: _EndpointStats, now: float) -> None:
+        """Function docstring."""
         cutoff = now - self._window_seconds
         while stats.recent_call_timestamps and stats.recent_call_timestamps[0] < cutoff:
             stats.recent_call_timestamps.popleft()

@@ -2,6 +2,9 @@
 Jupiter Sentinel - Dollar-Cost Averaging Bot
 Schedules regular buys using Jupiter swap.
 """
+
+import logging
+from typing import Any
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -33,22 +36,31 @@ class DCAState:
     pnl_pct: float = 0.0
 
     def update_stats(self) -> None:
+        """Function docstring."""
         if self.entries:
             self.total_invested_sol = sum(e.amount_sol for e in self.entries)
             self.total_token_received = sum(e.token_received for e in self.entries)
             if self.total_token_received > 0:
-                self.average_entry_price = self.total_invested_sol / self.total_token_received
+                self.average_entry_price = (
+                    self.total_invested_sol / self.total_token_received
+                )
 
 
 class DCABot:
     """Dollar-cost averaging bot using Jupiter swaps."""
 
-    def __init__(self, amount_per_buy_sol: float = 0.001, interval_seconds: int = 3600) -> None:
+    def __init__(
+        self, amount_per_buy_sol: float = 0.001, interval_seconds: int = 3600
+    ) -> None:
+        """Function docstring."""
         self.amount_per_buy = amount_per_buy_sol
         self.interval = interval_seconds
         self.positions: dict[str, DCAState] = {}
 
-    def get_quote(self, input_mint: str, output_mint: str, amount_lamports: int) -> Optional[dict]:
+    def get_quote(
+        self, input_mint: str, output_mint: str, amount_lamports: int
+    ) -> Optional[dict]:
+        """Function docstring."""
         try:
             url = build_jupiter_quote_url(
                 JUPITER_SWAP_V1,
@@ -62,8 +74,13 @@ class DCABot:
         except Exception:
             return None
 
-    def simulate_dca(self, input_mint: str, output_mint: str,
-                     num_buys: int = 10, amount_sol: float = 0.001) -> DCAState:
+    def simulate_dca(
+        self,
+        input_mint: str,
+        output_mint: str,
+        num_buys: int = 10,
+        amount_sol: float = 0.001,
+    ) -> DCAState:
         """Simulate DCA by getting multiple quotes at current price."""
         pair = f"{input_mint[:8]}.../{output_mint[:8]}..."
         state = DCAState(pair=pair)
@@ -92,6 +109,7 @@ class DCABot:
         return state
 
     def dca_summary(self, state: DCAState) -> str:
+        """Function docstring."""
         lines = [
             f"DCA Report: {state.pair}",
             f"Entries: {len(state.entries)}",

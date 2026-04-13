@@ -1,7 +1,9 @@
 """
 Momentum strategy based on consecutive upward price moves over oracle history.
 """
+
 from __future__ import annotations
+import logging
 
 import math
 from datetime import datetime
@@ -15,6 +17,7 @@ DEFAULT_SCALE_STEPS = 4
 
 
 def _extract_prices(values: Iterable[Any]) -> List[float]:
+    """Function docstring."""
     prices: List[float] = []
 
     for value in values:
@@ -27,6 +30,7 @@ def _extract_prices(values: Iterable[Any]) -> List[float]:
 
 
 def _price_changes_pct(prices: Sequence[float]) -> List[float]:
+    """Function docstring."""
     changes: List[float] = []
 
     for index in range(1, len(prices)):
@@ -39,7 +43,10 @@ def _price_changes_pct(prices: Sequence[float]) -> List[float]:
     return changes
 
 
-def _qualifying_streak(changes_pct: Sequence[float], *, min_increase_pct: float) -> List[float]:
+def _qualifying_streak(
+    changes_pct: Sequence[float], *, min_increase_pct: float
+) -> List[float]:
+    """Function docstring."""
     streak: List[float] = []
 
     for change_pct in reversed(changes_pct):
@@ -95,9 +102,16 @@ def _build_signal(
     max_scale_steps: int,
     history_points: int,
 ) -> dict[str, Any]:
+    """Function docstring."""
     average_increase_pct = sum(streak_changes) / consecutive_increases
-    total_change_pct = ((latest_point.price - anchor_price) / anchor_price) * 100 if anchor_price else 0.0
-    scale_step = min(max_scale_steps, 1 + max(0, consecutive_increases - min_consecutive_increases))
+    total_change_pct = (
+        ((latest_point.price - anchor_price) / anchor_price) * 100
+        if anchor_price
+        else 0.0
+    )
+    scale_step = min(
+        max_scale_steps, 1 + max(0, consecutive_increases - min_consecutive_increases)
+    )
 
     return {
         "timestamp": datetime.utcfromtimestamp(latest_point.timestamp).isoformat(),
@@ -162,7 +176,9 @@ def scan_for_signals(
         if not changes_pct:
             continue
 
-        streak_changes = _qualifying_streak(changes_pct, min_increase_pct=min_increase_pct)
+        streak_changes = _qualifying_streak(
+            changes_pct, min_increase_pct=min_increase_pct
+        )
         consecutive_increases = len(streak_changes)
         if consecutive_increases < min_consecutive_increases:
             continue

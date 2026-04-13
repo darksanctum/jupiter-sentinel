@@ -2,7 +2,10 @@
 Jupiter Sentinel - Profit Locker
 Thin compatibility wrapper over the shared bot state manager.
 """
+
 from __future__ import annotations
+import logging
+from typing import Any
 
 import math
 from pathlib import Path
@@ -16,10 +19,13 @@ PROFIT_LOCK_PATH = DATA_DIR / "state.json"
 
 
 def _resolve_manager(path: Optional[Path | str] = None) -> StateManager:
+    """Function docstring."""
     return StateManager(path or PROFIT_LOCK_PATH)
 
 
-def lock_profit(amount: float, lock_pct: Optional[float] = None, path: Optional[Path | str] = None) -> float:
+def lock_profit(
+    amount: float, lock_pct: Optional[float] = None, path: Optional[Path | str] = None
+) -> float:
     """
     Lock a percentage of realized profit and persist it to disk.
 

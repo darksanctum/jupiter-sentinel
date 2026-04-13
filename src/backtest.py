@@ -2,7 +2,9 @@
 Jupiter Sentinel - Historical Backtester
 Replays scanner and risk manager logic on historical price series.
 """
+
 from __future__ import annotations
+import logging
 
 import argparse
 import csv
@@ -63,7 +65,9 @@ class BacktestStrategy:
 
     name: str
     description: str
-    signal_generator: Callable[[Sequence[HistoricalPriceFeed], HistoricalScanner], List[dict]]
+    signal_generator: Callable[
+        [Sequence[HistoricalPriceFeed], HistoricalScanner], List[dict]
+    ]
     should_open: Callable[[dict], bool]
 
 
@@ -87,6 +91,7 @@ KNOWN_PAIR_NAMES = tuple(pair_name for _, _, pair_name in SCAN_PAIRS)
 
 
 def _extract_timestamp(raw: dict) -> object:
+    """Function docstring."""
     for key in TIMESTAMP_FIELDS:
         if key in raw and raw[key] not in ("", None):
             return raw[key]
@@ -94,12 +99,14 @@ def _extract_timestamp(raw: dict) -> object:
 
 
 def _normalize_pair_name(value: str) -> str:
+    """Function docstring."""
     candidate = re.sub(r"\s+", "", value.strip().upper())
     candidate = candidate.replace("-", "/").replace("_", "/")
     return candidate
 
 
 def _infer_pair_name(path: Path) -> Optional[str]:
+    """Function docstring."""
     stem = path.stem.upper()
     normalized = _normalize_pair_name(stem)
     if normalized in KNOWN_PAIR_NAMES:
@@ -114,6 +121,7 @@ def _infer_pair_name(path: Path) -> Optional[str]:
 
 
 def _extract_json_rows(payload: Any) -> List[dict]:
+    """Function docstring."""
     if isinstance(payload, list):
         return payload
 
@@ -123,10 +131,15 @@ def _extract_json_rows(payload: Any) -> List[dict]:
             if isinstance(nested, list):
                 return nested
 
-    raise ValueError("JSON backtest input must be a list of row objects or contain a list under rows/data/prices.")
+    raise ValueError(
+        "JSON backtest input must be a list of row objects or contain a list under rows/data/prices."
+    )
 
 
-def _finalize_price_rows(rows: Iterable[HistoricalPriceRow]) -> List[HistoricalPriceRow]:
+def _finalize_price_rows(
+    rows: Iterable[HistoricalPriceRow],
+) -> List[HistoricalPriceRow]:
+    """Function docstring."""
     ordered_rows = sorted(rows, key=lambda row: row.timestamp)
     if not ordered_rows:
         raise ValueError("No historical rows were loaded.")
@@ -140,7 +153,9 @@ def _finalize_price_rows(rows: Iterable[HistoricalPriceRow]) -> List[HistoricalP
         if not merged_prices:
             continue
         last_prices = merged_prices
-        synchronized_rows.append(HistoricalPriceRow(timestamp=row.timestamp, prices=merged_prices))
+        synchronized_rows.append(
+            HistoricalPriceRow(timestamp=row.timestamp, prices=merged_prices)
+        )
 
     if not synchronized_rows:
         raise ValueError("No valid price points were loaded.")
@@ -153,18 +168,26 @@ def _finalize_price_rows(rows: Iterable[HistoricalPriceRow]) -> List[HistoricalP
             break
 
     if start_index is None:
-        raise ValueError("Historical data must include SOL/USDC and at least one tradable pair.")
+        raise ValueError(
+            "Historical data must include SOL/USDC and at least one tradable pair."
+        )
 
     synchronized_rows = synchronized_rows[start_index:]
-    common_pairs = {pair for pair in KNOWN_PAIR_NAMES if pair in synchronized_rows[0].prices}
+    common_pairs = {
+        pair for pair in KNOWN_PAIR_NAMES if pair in synchronized_rows[0].prices
+    }
     for row in synchronized_rows[1:]:
         common_pairs.intersection_update(row.prices)
 
     ordered_pairs = [pair for pair in KNOWN_PAIR_NAMES if pair in common_pairs]
     if "SOL/USDC" not in ordered_pairs:
-        raise ValueError("Historical data must include a 'SOL/USDC' column for wallet valuation.")
+        raise ValueError(
+            "Historical data must include a 'SOL/USDC' column for wallet valuation."
+        )
     if len(ordered_pairs) < 2:
-        raise ValueError("Historical data must include SOL/USDC and at least one strategy pair.")
+        raise ValueError(
+            "Historical data must include SOL/USDC and at least one strategy pair."
+        )
 
     return [
         HistoricalPriceRow(
@@ -176,6 +199,7 @@ def _finalize_price_rows(rows: Iterable[HistoricalPriceRow]) -> List[HistoricalP
 
 
 def _coerce_price_rows(records: Iterable[dict]) -> List[HistoricalPriceRow]:
+    """Function docstring."""
     rows: List[HistoricalPriceRow] = []
 
     for raw in records:
@@ -190,12 +214,15 @@ def _coerce_price_rows(records: Iterable[dict]) -> List[HistoricalPriceRow]:
             normalized_key = _normalize_pair_name(str(key))
             prices[normalized_key] = float(value)
 
-        rows.append(HistoricalPriceRow(timestamp=_parse_timestamp(timestamp), prices=prices))
+        rows.append(
+            HistoricalPriceRow(timestamp=_parse_timestamp(timestamp), prices=prices)
+        )
 
     return _finalize_price_rows(rows)
 
 
 def _load_records_from_path(path: Path) -> List[dict]:
+    """Function docstring."""
     suffix = path.suffix.lower()
 
     if suffix == ".csv":
@@ -209,7 +236,10 @@ def _load_records_from_path(path: Path) -> List[dict]:
     raise ValueError(f"Unsupported data format: {path.suffix or '<no suffix>'}")
 
 
-def _merge_directory_records(rows_by_timestamp: Dict[datetime, Dict[str, float]], path: Path) -> None:
+def _merge_directory_records(
+    rows_by_timestamp: Dict[datetime, Dict[str, float]], path: Path
+) -> None:
+    """Function docstring."""
     pair_hint = _infer_pair_name(path)
 
     for raw in _load_records_from_path(path):
@@ -236,9 +266,15 @@ def _merge_directory_records(rows_by_timestamp: Dict[datetime, Dict[str, float]]
                 bucket[normalized_key] = float(value)
 
 
-def load_price_rows_from_directory(directory: Path) -> Tuple[List[HistoricalPriceRow], str]:
+def load_price_rows_from_directory(
+    directory: Path,
+) -> Tuple[List[HistoricalPriceRow], str]:
     """Load and synchronize all supported historical price files inside a directory."""
-    files = sorted(path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() in {".csv", ".json"})
+    files = sorted(
+        path
+        for path in directory.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".csv", ".json"}
+    )
     if not files:
         raise ValueError(f"No historical price files were found in {directory}.")
 
@@ -282,7 +318,9 @@ def load_price_rows(path: Optional[Path]) -> Tuple[List[HistoricalPriceRow], str
     return _coerce_price_rows(_load_records_from_path(path)), str(path)
 
 
-def generate_sample_rows(steps: int = 72, interval_minutes: int = 30) -> List[HistoricalPriceRow]:
+def generate_sample_rows(
+    steps: int = 72, interval_minutes: int = 30
+) -> List[HistoricalPriceRow]:
     """Build a deterministic sample series that produces scanner alerts and exits."""
     start = datetime(2026, 4, 10, 0, 0, 0)
     rows: List[HistoricalPriceRow] = []
@@ -338,6 +376,7 @@ class HistoricalPriceFeed:
         output_mint: str,
         points: Sequence[PricePoint],
     ) -> None:
+        """Function docstring."""
         self.pair_name = pair_name
         self.input_mint = input_mint
         self.output_mint = output_mint
@@ -347,9 +386,11 @@ class HistoricalPriceFeed:
         self._recorded_index = -1
 
     def set_index(self, index: int) -> None:
+        """Function docstring."""
         self._index = index
 
     def fetch_price(self) -> Optional[PricePoint]:
+        """Function docstring."""
         if self._index < 0 or self._index >= len(self.points):
             return None
 
@@ -361,6 +402,7 @@ class HistoricalPriceFeed:
 
     @property
     def current_price(self) -> Optional[float]:
+        """Function docstring."""
         if self.history:
             return self.history[-1].price
         if 0 <= self._index < len(self.points):
@@ -369,20 +411,25 @@ class HistoricalPriceFeed:
 
     @property
     def volatility(self) -> float:
+        """Function docstring."""
         if len(self.history) < 3:
             return 0.0
 
         prices = [point.price for point in self.history]
-        returns = [(prices[idx] - prices[idx - 1]) / prices[idx - 1] for idx in range(1, len(prices))]
+        returns = [
+            (prices[idx] - prices[idx - 1]) / prices[idx - 1]
+            for idx in range(1, len(prices))
+        ]
         if not returns:
             return 0.0
 
         mean = sum(returns) / len(returns)
         variance = sum((value - mean) ** 2 for value in returns) / len(returns)
-        return variance ** 0.5
+        return variance**0.5
 
     @property
     def price_change_pct(self) -> float:
+        """Function docstring."""
         if len(self.history) < 2:
             return 0.0
         first = self.history[0].price
@@ -392,6 +439,7 @@ class HistoricalPriceFeed:
         return (last - first) / first
 
     def stats(self) -> dict:
+        """Function docstring."""
         return {
             "pair": self.pair_name,
             "price": self.current_price,
@@ -405,11 +453,13 @@ class HistoricalScanner(VolatilityScanner):
     """Scanner variant that timestamps alerts with historical bar times."""
 
     def __init__(self, feeds: Sequence[HistoricalPriceFeed]) -> None:
+        """Function docstring."""
         self.feeds = list(feeds)
         self.alerts: List[dict] = []
         self.running = False
 
     def scan_once(self) -> List[dict]:
+        """Function docstring."""
         new_alerts = []
 
         for feed in self.feeds:
@@ -417,7 +467,10 @@ class HistoricalScanner(VolatilityScanner):
             if not point:
                 continue
 
-            if abs(feed.price_change_pct) > VOLATILITY_THRESHOLD and len(feed.history) >= 5:
+            if (
+                abs(feed.price_change_pct) > VOLATILITY_THRESHOLD
+                and len(feed.history) >= 5
+            ):
                 alert = {
                     "timestamp": datetime.utcfromtimestamp(point.timestamp).isoformat(),
                     "pair": feed.pair_name,
@@ -425,7 +478,9 @@ class HistoricalScanner(VolatilityScanner):
                     "change_pct": feed.price_change_pct * 100,
                     "volatility": feed.volatility,
                     "direction": "UP" if feed.price_change_pct > 0 else "DOWN",
-                    "severity": "HIGH" if abs(feed.price_change_pct) > 0.10 else "MEDIUM",
+                    "severity": (
+                        "HIGH" if abs(feed.price_change_pct) > 0.10 else "MEDIUM"
+                    ),
                 }
                 new_alerts.append(alert)
                 self.alerts.append(alert)
@@ -433,22 +488,32 @@ class HistoricalScanner(VolatilityScanner):
         return new_alerts
 
 
-def _volatility_signal_generator(feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner) -> List[dict]:
+def _volatility_signal_generator(
+    feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner
+) -> List[dict]:
+    """Function docstring."""
     del feeds
     return scanner.scan_once()
 
 
-def _momentum_signal_generator(feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner) -> List[dict]:
+def _momentum_signal_generator(
+    feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner
+) -> List[dict]:
+    """Function docstring."""
     del scanner
     return scan_momentum_signals(feeds)
 
 
-def _mean_reversion_signal_generator(feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner) -> List[dict]:
+def _mean_reversion_signal_generator(
+    feeds: Sequence[HistoricalPriceFeed], scanner: HistoricalScanner
+) -> List[dict]:
+    """Function docstring."""
     del scanner
     return scan_mean_reversion_signals(feeds)
 
 
 def build_volatility_strategy(enter_on: str = "down") -> BacktestStrategy:
+    """Function docstring."""
     if enter_on not in {"down", "up", "all"}:
         raise ValueError("enter_on must be one of: down, up, all")
 
@@ -456,7 +521,8 @@ def build_volatility_strategy(enter_on: str = "down") -> BacktestStrategy:
         name="volatility_reversal",
         description=f"Volatility scanner entries on {enter_on.upper()} alerts with risk-managed exits.",
         signal_generator=_volatility_signal_generator,
-        should_open=lambda alert: enter_on == "all" or str(alert.get("direction", "")).lower() == enter_on,
+        should_open=lambda alert: enter_on == "all"
+        or str(alert.get("direction", "")).lower() == enter_on,
     )
 
 
@@ -466,13 +532,15 @@ DEFAULT_BACKTEST_STRATEGIES: Tuple[BacktestStrategy, ...] = (
         name="momentum",
         description="Long-only momentum entries on consecutive upward price moves.",
         signal_generator=_momentum_signal_generator,
-        should_open=lambda alert: alert.get("action") == "BUY" and alert.get("side") == "LONG",
+        should_open=lambda alert: alert.get("action") == "BUY"
+        and alert.get("side") == "LONG",
     ),
     BacktestStrategy(
         name="mean_reversion",
         description="Long-only Bollinger mean-reversion entries when price falls below the lower band.",
         signal_generator=_mean_reversion_signal_generator,
-        should_open=lambda alert: alert.get("action") == "BUY" and alert.get("side") == "LONG",
+        should_open=lambda alert: alert.get("action") == "BUY"
+        and alert.get("side") == "LONG",
     ),
 )
 
@@ -481,15 +549,18 @@ class HistoricalExecutor:
     """A small account simulator that mirrors the `TradeExecutor` balance API."""
 
     def __init__(self, starting_sol: float, starting_sol_price: float) -> None:
+        """Function docstring."""
         self.address = "BACKTEST"
         self.cash_sol = float(starting_sol)
         self.sol_price = float(starting_sol_price)
         self.trade_history: List[dict] = []
 
     def set_sol_price(self, price: float) -> None:
+        """Function docstring."""
         self.sol_price = float(price)
 
     def reserve_position(self, amount_sol: float, pair: str, timestamp: float) -> None:
+        """Function docstring."""
         self.cash_sol = max(0.0, self.cash_sol - amount_sol)
         self.trade_history.append(
             {
@@ -510,6 +581,7 @@ class HistoricalExecutor:
         action_type: str,
         timestamp: float,
     ) -> None:
+        """Function docstring."""
         proceeds_sol = max(position.amount_sol * (1.0 + (pnl_pct / 100.0)), 0.0)
         self.cash_sol += proceeds_sol
         self.trade_history.append(
@@ -525,6 +597,7 @@ class HistoricalExecutor:
         )
 
     def get_balance(self) -> dict:
+        """Function docstring."""
         return {
             "sol": self.cash_sol,
             "usd_value": self.cash_sol * self.sol_price,
@@ -536,7 +609,12 @@ class HistoricalExecutor:
 class HistoricalRiskManager(RiskManager):
     """Risk manager that timestamps and settles positions against historical bars."""
 
-    def __init__(self, executor: HistoricalExecutor, feeds_by_pair: Dict[str, HistoricalPriceFeed]) -> None:
+    def __init__(
+        self,
+        executor: HistoricalExecutor,
+        feeds_by_pair: Dict[str, HistoricalPriceFeed],
+    ) -> None:
+        """Function docstring."""
         super().__init__(executor)
         self._feeds_by_pair = feeds_by_pair
 
@@ -550,6 +628,7 @@ class HistoricalRiskManager(RiskManager):
         take_profit_pct: Optional[float] = None,
         dry_run: bool = True,
     ) -> Optional[Position]:
+        """Function docstring."""
         balance = self.executor.get_balance()
         sol_price = float(balance.get("sol_price", 0.0) or 0.0)
         if sol_price <= 0:
@@ -587,6 +666,7 @@ class HistoricalRiskManager(RiskManager):
         return position
 
     def check_positions(self) -> List[dict]:
+        """Function docstring."""
         actions = []
 
         for pos in self.positions[:]:
@@ -621,7 +701,10 @@ class HistoricalRiskManager(RiskManager):
                     "pnl_pct": pnl_decimal * 100,
                     "price": current_price,
                 }
-            elif current_price <= trailing_stop_price and pos.highest_price > pos.entry_price * 1.01:
+            elif (
+                current_price <= trailing_stop_price
+                and pos.highest_price > pos.entry_price * 1.01
+            ):
                 action = {
                     "type": "TRAILING_STOP",
                     "pair": pos.pair,
@@ -633,11 +716,15 @@ class HistoricalRiskManager(RiskManager):
             if not action:
                 continue
 
-            notional = float(getattr(pos, "notional", pos.amount_sol * self.executor.sol_price))
+            notional = float(
+                getattr(pos, "notional", pos.amount_sol * self.executor.sol_price)
+            )
             pnl_amount = notional * pnl_decimal
             pos.status = "closed"
             self.positions.remove(pos)
-            self.executor.settle_position(pos, action["pnl_pct"], current_price, action["type"], point.timestamp)
+            self.executor.settle_position(
+                pos, action["pnl_pct"], current_price, action["type"], point.timestamp
+            )
             self.closed_positions.append(
                 {
                     "position": pos,
@@ -664,6 +751,7 @@ class HistoricalBacktester:
         enter_on: str = "down",
         strategy: Optional[BacktestStrategy] = None,
     ) -> None:
+        """Function docstring."""
         if not rows:
             raise ValueError("Backtest requires at least one price row.")
 
@@ -672,27 +760,41 @@ class HistoricalBacktester:
         self.entry_amount_sol = float(entry_amount_sol)
         self.pairs = available_pairs(self.rows)
         if not self.pairs:
-            raise ValueError("Historical data does not include any configured scan pairs.")
+            raise ValueError(
+                "Historical data does not include any configured scan pairs."
+            )
         self.tradable_pairs = [pair for pair in self.pairs if pair[2] != "SOL/USDC"]
-        self.tradable_pair_names = {pair_name for _, _, pair_name in self.tradable_pairs}
+        self.tradable_pair_names = {
+            pair_name for _, _, pair_name in self.tradable_pairs
+        }
         if "SOL/USDC" not in {pair_name for _, _, pair_name in self.pairs}:
             raise ValueError("Backtest requires the SOL/USDC pair.")
         if not self.tradable_pairs:
-            raise ValueError("Backtest requires at least one tradable pair besides SOL/USDC.")
+            raise ValueError(
+                "Backtest requires at least one tradable pair besides SOL/USDC."
+            )
 
         self.feeds_by_pair = self._build_feeds()
         self.scanner = HistoricalScanner(list(self.feeds_by_pair.values()))
-        self.executor = HistoricalExecutor(starting_sol=starting_sol, starting_sol_price=self.rows[0].prices["SOL/USDC"])
+        self.executor = HistoricalExecutor(
+            starting_sol=starting_sol,
+            starting_sol_price=self.rows[0].prices["SOL/USDC"],
+        )
         self.risk_manager = HistoricalRiskManager(self.executor, self.feeds_by_pair)
-        self.analytics = TradingAnalytics(starting_equity=starting_sol * self.rows[0].prices["SOL/USDC"])
+        self.analytics = TradingAnalytics(
+            starting_equity=starting_sol * self.rows[0].prices["SOL/USDC"]
+        )
         self.equity_snapshots: List[dict] = []
         self.alerts: List[dict] = []
 
     def _build_feeds(self) -> Dict[str, HistoricalPriceFeed]:
+        """Function docstring."""
         feeds = {}
         for input_mint, output_mint, pair_name in self.pairs:
             points = [
-                PricePoint(timestamp=row.timestamp.timestamp(), price=row.prices[pair_name])
+                PricePoint(
+                    timestamp=row.timestamp.timestamp(), price=row.prices[pair_name]
+                )
                 for row in self.rows
             ]
             feeds[pair_name] = HistoricalPriceFeed(
@@ -704,12 +806,18 @@ class HistoricalBacktester:
         return feeds
 
     def _has_open_position(self, pair_name: str) -> bool:
-        return any(position.pair == pair_name and position.status == "open" for position in self.risk_manager.positions)
+        """Function docstring."""
+        return any(
+            position.pair == pair_name and position.status == "open"
+            for position in self.risk_manager.positions
+        )
 
     def _should_open(self, alert: dict) -> bool:
+        """Function docstring."""
         return self.strategy.should_open(alert)
 
     def _period_returns(self) -> List[float]:
+        """Function docstring."""
         returns: List[float] = []
         previous_equity = None
 
@@ -722,6 +830,7 @@ class HistoricalBacktester:
         return returns
 
     def _periods_per_year(self) -> float:
+        """Function docstring."""
         if len(self.equity_snapshots) < 2:
             return 365.0
 
@@ -740,38 +849,47 @@ class HistoricalBacktester:
         return max(1.0, (365.25 * 24 * 60 * 60) / median(deltas))
 
     def _calculate_sharpe_ratio(self) -> float:
+        """Function docstring."""
         returns = self._period_returns()
         if len(returns) < 2:
             return 0.0
 
         mean_return = sum(returns) / len(returns)
-        variance = sum((value - mean_return) ** 2 for value in returns) / (len(returns) - 1)
-        volatility = variance ** 0.5
+        variance = sum((value - mean_return) ** 2 for value in returns) / (
+            len(returns) - 1
+        )
+        volatility = variance**0.5
         if volatility == 0:
             return 0.0
 
         return mean_return / volatility * math.sqrt(self._periods_per_year())
 
     def _calculate_sortino_ratio(self) -> float:
+        """Function docstring."""
         returns = self._period_returns()
         if not returns:
             return 0.0
 
         mean_return = sum(returns) / len(returns)
-        downside_variance = sum(min(value, 0.0) ** 2 for value in returns) / len(returns)
-        downside_deviation = downside_variance ** 0.5
+        downside_variance = sum(min(value, 0.0) ** 2 for value in returns) / len(
+            returns
+        )
+        downside_deviation = downside_variance**0.5
         if downside_deviation == 0:
             return 0.0
 
         return mean_return / downside_deviation * math.sqrt(self._periods_per_year())
 
     def _record_equity_snapshot(self, timestamp: datetime) -> None:
+        """Function docstring."""
         total_sol = self.executor.cash_sol
 
         for pos in self.risk_manager.positions:
             feed = self.risk_manager.price_feeds.get(pos.pair)
             current_price = feed.current_price if feed else pos.entry_price
-            pnl_decimal = ((current_price or pos.entry_price) - pos.entry_price) / pos.entry_price
+            pnl_decimal = (
+                (current_price or pos.entry_price) - pos.entry_price
+            ) / pos.entry_price
             total_sol += max(pos.amount_sol * (1.0 + pnl_decimal), 0.0)
 
         self.equity_snapshots.append(
@@ -782,6 +900,7 @@ class HistoricalBacktester:
         )
 
     def _summary(self) -> Dict[str, float]:
+        """Function docstring."""
         if not self.equity_snapshots:
             return {}
 
@@ -798,12 +917,18 @@ class HistoricalBacktester:
             max_drawdown = max(max_drawdown, drawdown)
 
         realized_pnl = sum(
-            trade.pnl_amount for trade in self.analytics.realized_trades if trade.pnl_amount is not None
+            trade.pnl_amount
+            for trade in self.analytics.realized_trades
+            if trade.pnl_amount is not None
         )
         return {
             "starting_equity": start_equity,
             "ending_equity": end_equity,
-            "total_return_pct": ((end_equity - start_equity) / start_equity * 100.0) if start_equity else 0.0,
+            "total_return_pct": (
+                ((end_equity - start_equity) / start_equity * 100.0)
+                if start_equity
+                else 0.0
+            ),
             "realized_pnl": realized_pnl,
             "max_drawdown_pct": max_drawdown * 100.0,
             "alerts": len(self.alerts),
@@ -815,6 +940,7 @@ class HistoricalBacktester:
         }
 
     def _trade_rows(self) -> List[dict]:
+        """Function docstring."""
         rows = []
         for trade in self.analytics.realized_trades:
             rows.append(
@@ -832,6 +958,7 @@ class HistoricalBacktester:
         return rows
 
     def run(self) -> BacktestResult:
+        """Function docstring."""
         closed_offset = 0
 
         for index, row in enumerate(self.rows):
@@ -845,7 +972,9 @@ class HistoricalBacktester:
                     **alert,
                     "strategy": alert.get("strategy", self.strategy.name),
                 }
-                for alert in self.strategy.signal_generator(list(self.feeds_by_pair.values()), self.scanner)
+                for alert in self.strategy.signal_generator(
+                    list(self.feeds_by_pair.values()), self.scanner
+                )
                 if alert.get("pair") in self.tradable_pair_names
             ]
             self.alerts.extend(alerts)
@@ -861,7 +990,10 @@ class HistoricalBacktester:
                 if self._has_open_position(alert["pair"]):
                     continue
 
-                pair_meta = next((pair for pair in self.tradable_pairs if pair[2] == alert["pair"]), None)
+                pair_meta = next(
+                    (pair for pair in self.tradable_pairs if pair[2] == alert["pair"]),
+                    None,
+                )
                 if pair_meta is None:
                     continue
 
@@ -887,7 +1019,9 @@ class HistoricalBacktester:
         )
 
 
-def render_equity_curve(curve: Sequence[dict], width: int = 64, height: int = 12) -> str:
+def render_equity_curve(
+    curve: Sequence[dict], width: int = 64, height: int = 12
+) -> str:
     """Render a compact ASCII equity curve."""
     if not curve:
         return "No equity data."
@@ -999,9 +1133,15 @@ def run_parallel_backtests(
     return [result for result in results if result is not None]
 
 
-def format_strategy_comparison_report(results: Sequence[BacktestResult], *, source: str) -> str:
+def format_strategy_comparison_report(
+    results: Sequence[BacktestResult], *, source: str
+) -> str:
     """Build a markdown comparison report with per-strategy metrics and equity curves."""
-    ordered_results = sorted(results, key=lambda result: result.summary.get("ending_equity", 0.0), reverse=True)
+    ordered_results = sorted(
+        results,
+        key=lambda result: result.summary.get("ending_equity", 0.0),
+        reverse=True,
+    )
     generated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
     lines = [
@@ -1090,15 +1230,28 @@ def write_backtest_report(report: str, output_path: Path) -> Path:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Replay Jupiter Sentinel logic on historical price data.")
+    """Function docstring."""
+    parser = argparse.ArgumentParser(
+        description="Replay Jupiter Sentinel logic on historical price data."
+    )
     parser.add_argument(
         "--data",
         type=Path,
         default=DATA_DIR,
         help="Path to a CSV/JSON price file or a directory of historical price files.",
     )
-    parser.add_argument("--starting-sol", type=float, default=10.0, help="Starting SOL balance for the simulated wallet.")
-    parser.add_argument("--entry-amount-sol", type=float, default=0.25, help="Requested SOL per entry before risk caps.")
+    parser.add_argument(
+        "--starting-sol",
+        type=float,
+        default=10.0,
+        help="Starting SOL balance for the simulated wallet.",
+    )
+    parser.add_argument(
+        "--entry-amount-sol",
+        type=float,
+        default=0.25,
+        help="Requested SOL per entry before risk caps.",
+    )
     parser.add_argument(
         "--report-path",
         type=Path,
@@ -1116,12 +1269,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     report = format_strategy_comparison_report(results, source=source)
     report_path = write_backtest_report(report, args.report_path)
 
-    print(f"Data source: {source}")
-    print(f"Report written to: {report_path}")
-    print()
+    logging.debug("%s", f"Data source: {source}")
+    logging.debug("%s", f"Report written to: {report_path}")
+    logging.debug("")
     for result in results:
-        print(format_backtest_report(result))
-        print()
+        logging.debug("%s", format_backtest_report(result))
+        logging.debug("")
     return 0
 
 

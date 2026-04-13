@@ -2,7 +2,9 @@
 Jupiter Sentinel - Portfolio Risk Manager
 Tracks portfolio-level exposure, concentration, drawdown, and Kelly sizing.
 """
+
 from __future__ import annotations
+import logging
 
 import math
 from datetime import datetime
@@ -10,6 +12,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
+    """Function docstring."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -20,16 +23,19 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def _is_mapping(value: Any) -> bool:
+    """Function docstring."""
     return isinstance(value, Mapping)
 
 
 def _read_field(payload: Any, key: str, default: Any = None) -> Any:
+    """Function docstring."""
     if _is_mapping(payload):
         return payload.get(key, default)
     return getattr(payload, key, default)
 
 
 def _read_nested_pnl_pct(record: Any) -> Optional[float]:
+    """Function docstring."""
     direct = _read_field(record, "pnl_pct")
     if direct is not None:
         value = _as_float(direct, float("nan"))
@@ -54,15 +60,17 @@ def _read_nested_pnl_pct(record: Any) -> Optional[float]:
 
 
 def _history_prices(feed: Any, lookback: int) -> list[float]:
+    """Function docstring."""
     history = _read_field(feed, "history", [])
     prices = [_as_float(_read_field(point, "price"), float("nan")) for point in history]
     clean = [price for price in prices if math.isfinite(price) and price > 0]
     if lookback > 0:
-        return clean[-(lookback + 1):]
+        return clean[-(lookback + 1) :]
     return clean
 
 
 def _returns_from_prices(prices: Sequence[float]) -> list[float]:
+    """Function docstring."""
     returns: list[float] = []
     for index in range(1, len(prices)):
         previous = prices[index - 1]
@@ -74,6 +82,7 @@ def _returns_from_prices(prices: Sequence[float]) -> list[float]:
 
 
 def _pearson_correlation(left: Sequence[float], right: Sequence[float]) -> float:
+    """Function docstring."""
     sample_size = min(len(left), len(right))
     if sample_size < 2:
         return 0.0
@@ -114,6 +123,7 @@ class PortfolioRiskManager:
         correlation_lookback: int = 30,
         kelly_fraction_cap: float = 0.25,
     ) -> None:
+        """Function docstring."""
         if not 0 < max_drawdown_pct < 1:
             raise ValueError("max_drawdown_pct must be between 0 and 1")
         if max_portfolio_exposure_pct <= 0:
@@ -143,6 +153,7 @@ class PortfolioRiskManager:
         return not self.halt_trading
 
     def _entry_value_usd(self, position: Any, *, sol_price: float = 0.0) -> float:
+        """Function docstring."""
         notional = _as_float(_read_field(position, "notional"), 0.0)
         if notional > 0:
             return notional
@@ -153,6 +164,7 @@ class PortfolioRiskManager:
         return amount_sol * sol_price
 
     def _current_price(self, position: Any, price_feeds: Mapping[str, Any]) -> float:
+        """Function docstring."""
         pair = str(_read_field(position, "pair", ""))
         feed = price_feeds.get(pair)
         if feed is None:
@@ -174,6 +186,7 @@ class PortfolioRiskManager:
         price_feeds: Optional[Mapping[str, Any]] = None,
         sol_price: float = 0.0,
     ) -> float:
+        """Function docstring."""
         entry_value = self._entry_value_usd(position, sol_price=sol_price)
         if entry_value <= 0:
             return 0.0
@@ -197,7 +210,9 @@ class PortfolioRiskManager:
     ) -> float:
         """Return gross mark-to-market exposure across open positions."""
         return math.fsum(
-            self._position_market_value_usd(position, price_feeds=price_feeds, sol_price=sol_price)
+            self._position_market_value_usd(
+                position, price_feeds=price_feeds, sol_price=sol_price
+            )
             for position in positions
             if str(_read_field(position, "status", "open")) == "open"
         )
@@ -208,7 +223,11 @@ class PortfolioRiskManager:
         price_feeds: Mapping[str, Any],
     ) -> dict[str, dict[str, float]]:
         """Build a pairwise correlation matrix from feed return histories."""
-        open_positions = [position for position in positions if str(_read_field(position, "status", "open")) == "open"]
+        open_positions = [
+            position
+            for position in positions
+            if str(_read_field(position, "status", "open")) == "open"
+        ]
         correlations: dict[str, dict[str, float]] = {}
 
         for left_index, left_position in enumerate(open_positions):
@@ -216,15 +235,25 @@ class PortfolioRiskManager:
             correlations.setdefault(left_pair, {})
             correlations[left_pair][left_pair] = 1.0
             left_feed = price_feeds.get(left_pair)
-            left_returns = _returns_from_prices(_history_prices(left_feed, self.correlation_lookback)) if left_feed else []
+            left_returns = (
+                _returns_from_prices(
+                    _history_prices(left_feed, self.correlation_lookback)
+                )
+                if left_feed
+                else []
+            )
 
-            for right_position in open_positions[left_index + 1:]:
+            for right_position in open_positions[left_index + 1 :]:
                 right_pair = str(_read_field(right_position, "pair", ""))
                 correlations.setdefault(right_pair, {})
                 correlations[right_pair][right_pair] = 1.0
                 right_feed = price_feeds.get(right_pair)
                 right_returns = (
-                    _returns_from_prices(_history_prices(right_feed, self.correlation_lookback)) if right_feed else []
+                    _returns_from_prices(
+                        _history_prices(right_feed, self.correlation_lookback)
+                    )
+                    if right_feed
+                    else []
                 )
 
                 corr = _pearson_correlation(left_returns, right_returns)
@@ -241,7 +270,11 @@ class PortfolioRiskManager:
         sol_price: float = 0.0,
     ) -> float:
         """Return exposure-weighted average absolute correlation across open positions."""
-        open_positions = [position for position in positions if str(_read_field(position, "status", "open")) == "open"]
+        open_positions = [
+            position
+            for position in positions
+            if str(_read_field(position, "status", "open")) == "open"
+        ]
         if len(open_positions) < 2:
             return 0.0
 
@@ -256,7 +289,7 @@ class PortfolioRiskManager:
                 price_feeds=price_feeds,
                 sol_price=sol_price,
             )
-            for right_position in open_positions[left_index + 1:]:
+            for right_position in open_positions[left_index + 1 :]:
                 right_pair = str(_read_field(right_position, "pair", ""))
                 right_exposure = self._position_market_value_usd(
                     right_position,
@@ -266,7 +299,9 @@ class PortfolioRiskManager:
                 weight = left_exposure * right_exposure
                 if weight <= 0:
                     continue
-                weighted_total += abs(correlations.get(left_pair, {}).get(right_pair, 0.0)) * weight
+                weighted_total += (
+                    abs(correlations.get(left_pair, {}).get(right_pair, 0.0)) * weight
+                )
                 weight_sum += weight
 
         if weight_sum <= 0:
@@ -297,7 +332,9 @@ class PortfolioRiskManager:
         """Track peak-to-current drawdown and halt if the configured limit is breached."""
         current_value = max(_as_float(portfolio_value_usd), 0.0)
         self.current_portfolio_value_usd = current_value
-        self.peak_portfolio_value_usd = max(self.peak_portfolio_value_usd, current_value)
+        self.peak_portfolio_value_usd = max(
+            self.peak_portfolio_value_usd, current_value
+        )
 
         peak = self.peak_portfolio_value_usd
         drawdown = ((peak - current_value) / peak) if peak > 0 else 0.0
@@ -376,11 +413,17 @@ class PortfolioRiskManager:
         """
         Recommend a new position size in USD using capped Kelly and portfolio crowding.
         """
-        kelly = self.calculate_kelly_criterion(trade_history, closed_positions=closed_positions)
+        kelly = self.calculate_kelly_criterion(
+            trade_history, closed_positions=closed_positions
+        )
         open_positions = list(positions or [])
         feeds = price_feeds or {}
-        current_exposure = self.calculate_total_exposure(open_positions, price_feeds=feeds, sol_price=sol_price)
-        average_correlation = self.average_correlation(open_positions, feeds, sol_price=sol_price)
+        current_exposure = self.calculate_total_exposure(
+            open_positions, price_feeds=feeds, sol_price=sol_price
+        )
+        average_correlation = self.average_correlation(
+            open_positions, feeds, sol_price=sol_price
+        )
         correlation_adjustment = 1.0 / (1.0 + average_correlation)
         adjusted_fraction = kelly["capped_kelly_fraction"] * correlation_adjustment
 
@@ -414,11 +457,15 @@ class PortfolioRiskManager:
         """Return a consolidated portfolio risk snapshot."""
         feeds = price_feeds or {}
         current_value = (
-            self.estimate_portfolio_value(positions, price_feeds=feeds, cash_usd=cash_usd, sol_price=sol_price)
+            self.estimate_portfolio_value(
+                positions, price_feeds=feeds, cash_usd=cash_usd, sol_price=sol_price
+            )
             if portfolio_value_usd is None
             else _as_float(portfolio_value_usd)
         )
-        exposure = self.calculate_total_exposure(positions, price_feeds=feeds, sol_price=sol_price)
+        exposure = self.calculate_total_exposure(
+            positions, price_feeds=feeds, sol_price=sol_price
+        )
         drawdown = self.update_drawdown(current_value, timestamp=timestamp)
         sizing = self.recommend_position_size(
             current_value,
@@ -436,9 +483,15 @@ class PortfolioRiskManager:
             "drawdown_pct": drawdown["drawdown_pct"],
             "max_drawdown_limit_pct": self.max_drawdown_pct * 100.0,
             "halt_trading": self.halt_trading,
-            "open_positions": sum(1 for position in positions if str(_read_field(position, "status", "open")) == "open"),
+            "open_positions": sum(
+                1
+                for position in positions
+                if str(_read_field(position, "status", "open")) == "open"
+            ),
             "total_exposure_usd": exposure,
-            "exposure_utilization_pct": (exposure / max_exposure * 100.0) if max_exposure > 0 else 0.0,
+            "exposure_utilization_pct": (
+                (exposure / max_exposure * 100.0) if max_exposure > 0 else 0.0
+            ),
             "correlations": self.calculate_position_correlations(positions, feeds),
             **sizing,
         }

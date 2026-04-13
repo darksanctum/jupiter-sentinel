@@ -3,7 +3,9 @@ Jupiter Sentinel - Token Discovery
 Fetches boosted tokens from DexScreener and resolves them into
 tradeable Solana pairs that can feed the scanner.
 """
+
 from __future__ import annotations
+import logging
 
 import json
 import time
@@ -32,6 +34,7 @@ SCANNER_QUOTE_PRIORITY = {
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
+    """Function docstring."""
     try:
         if value is None or value == "":
             return default
@@ -41,11 +44,13 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def _chunks(values: list[str], size: int) -> Iterable[list[str]]:
+    """Function docstring."""
     for index in range(0, len(values), size):
-        yield values[index:index + size]
+        yield values[index : index + size]
 
 
 def _created_at_seconds(raw_value: Any) -> Optional[float]:
+    """Function docstring."""
     timestamp = _as_float(raw_value, default=0.0)
     if timestamp <= 0:
         return None
@@ -85,6 +90,7 @@ class TradeableToken:
     scanner_compatible: bool
 
     def to_dict(self) -> dict[str, Any]:
+        """Function docstring."""
         return asdict(self)
 
 
@@ -103,6 +109,7 @@ class TokenDiscovery:
         min_volume_usd: float = 0.0,
         min_pair_age_hours: float = 1.0,
     ) -> None:
+        """Function docstring."""
         self.cache_ttl = cache_ttl
         self.min_liquidity_usd = min_liquidity_usd
         self.min_volume_usd = min_volume_usd
@@ -123,7 +130,9 @@ class TokenDiscovery:
             tokens = tokens[:limit]
         return [token.to_dict() for token in tokens]
 
-    def build_scan_pairs(self, limit: Optional[int] = None) -> list[tuple[str, str, str]]:
+    def build_scan_pairs(
+        self, limit: Optional[int] = None
+    ) -> list[tuple[str, str, str]]:
         """Build scanner-ready `(input_mint, output_mint, pair_name)` tuples."""
         pairs: list[tuple[str, str, str]] = []
         for token in self._discover_tradeable_tokens():
@@ -135,6 +144,7 @@ class TokenDiscovery:
         return pairs
 
     def _discover_tradeable_tokens(self) -> list[TradeableToken]:
+        """Function docstring."""
         now = time.time()
         if self._cache is not None and (now - self._last_fetch) < self.cache_ttl:
             return list(self._cache)
@@ -152,7 +162,11 @@ class TokenDiscovery:
         for boost in boosted_tokens:
             chain_id = str(boost.get("chainId", "")).lower()
             token_address = str(boost.get("tokenAddress", "")).strip()
-            if chain_id != SOLANA_CHAIN_ID or not token_address or token_address in seen_addresses:
+            if (
+                chain_id != SOLANA_CHAIN_ID
+                or not token_address
+                or token_address in seen_addresses
+            ):
                 continue
             solana_boosts.append(boost)
             seen_addresses.add(token_address)
@@ -169,7 +183,9 @@ class TokenDiscovery:
         discovered: list[TradeableToken] = []
         for boost in solana_boosts:
             token_address = str(boost["tokenAddress"]).strip()
-            pair = self._select_tradeable_pair(pairs_by_token.get(token_address, []), now)
+            pair = self._select_tradeable_pair(
+                pairs_by_token.get(token_address, []), now
+            )
             if not pair:
                 continue
             discovered.append(self._build_tradeable_token(boost, pair, now))
@@ -179,13 +195,19 @@ class TokenDiscovery:
         return list(discovered)
 
     def _fetch_boosted_tokens(self) -> list[dict[str, Any]]:
+        """Function docstring."""
         payload = self._fetch_json(TOKEN_BOOSTS_TOP_URL)
         if not isinstance(payload, list):
             return []
         return [item for item in payload if isinstance(item, dict)]
 
-    def _fetch_pairs_by_token(self, token_addresses: list[str]) -> dict[str, list[dict[str, Any]]]:
-        pairs_by_token: dict[str, list[dict[str, Any]]] = {address: [] for address in token_addresses}
+    def _fetch_pairs_by_token(
+        self, token_addresses: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Function docstring."""
+        pairs_by_token: dict[str, list[dict[str, Any]]] = {
+            address: [] for address in token_addresses
+        }
 
         for chunk in _chunks(token_addresses, 30):
             joined = urllib.parse.quote(",".join(chunk), safe=",")
@@ -205,9 +227,12 @@ class TokenDiscovery:
         return pairs_by_token
 
     def _fetch_json(self, url: str, timeout: int = 10) -> Any:
+        """Function docstring."""
         try:
             request = urllib.request.Request(url, headers=DEXSCREENER_HEADERS)
-            return request_json(request, timeout=timeout, describe="DexScreener request")
+            return request_json(
+                request, timeout=timeout, describe="DexScreener request"
+            )
         except Exception:
             return None
 
@@ -216,12 +241,14 @@ class TokenDiscovery:
         pairs: list[dict[str, Any]],
         now: float,
     ) -> Optional[dict[str, Any]]:
+        """Function docstring."""
         candidates = [pair for pair in pairs if self._is_tradeable_pair(pair, now)]
         if not candidates:
             return None
         return max(candidates, key=self._pair_rank)
 
     def _is_tradeable_pair(self, pair: dict[str, Any], now: float) -> bool:
+        """Function docstring."""
         if str(pair.get("chainId", "")).lower() != SOLANA_CHAIN_ID:
             return False
 
@@ -238,13 +265,17 @@ class TokenDiscovery:
         return True
 
     def _pair_age_hours(self, pair: dict[str, Any], now: float) -> float:
+        """Function docstring."""
         created_at_seconds = _created_at_seconds(pair.get("pairCreatedAt"))
         if created_at_seconds is None or created_at_seconds > now:
             return 0.0
         return (now - created_at_seconds) / 3600.0
 
     def _pair_rank(self, pair: dict[str, Any]) -> tuple[int, int, float, float]:
-        quote_address = str((pair.get("quoteToken", {}) or {}).get("address", "")).strip()
+        """Function docstring."""
+        quote_address = str(
+            (pair.get("quoteToken", {}) or {}).get("address", "")
+        ).strip()
         liquidity_usd = _as_float((pair.get("liquidity", {}) or {}).get("usd"))
         volume_24h = _as_float((pair.get("volume", {}) or {}).get("h24"))
         return (
@@ -260,6 +291,7 @@ class TokenDiscovery:
         pair: dict[str, Any],
         now: float,
     ) -> TradeableToken:
+        """Function docstring."""
         base_token = pair.get("baseToken", {}) or {}
         quote_token = pair.get("quoteToken", {}) or {}
         liquidity = pair.get("liquidity", {}) or {}
@@ -267,11 +299,15 @@ class TokenDiscovery:
         quote_address = str(quote_token.get("address", "")).strip()
 
         price_usd = pair.get("priceUsd")
-        parsed_price_usd = None if price_usd in (None, "") else _as_float(price_usd, default=0.0)
+        parsed_price_usd = (
+            None if price_usd in (None, "") else _as_float(price_usd, default=0.0)
+        )
         fdv = pair.get("fdv")
         parsed_fdv = None if fdv in (None, "") else _as_float(fdv, default=0.0)
         market_cap = pair.get("marketCap")
-        parsed_market_cap = None if market_cap in (None, "") else _as_float(market_cap, default=0.0)
+        parsed_market_cap = (
+            None if market_cap in (None, "") else _as_float(market_cap, default=0.0)
+        )
 
         return TradeableToken(
             chain_id=SOLANA_CHAIN_ID,

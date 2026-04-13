@@ -2,7 +2,9 @@
 Shared resilience helpers for API retries, fallback pricing, transaction
 reconciliation, and durable JSON state files.
 """
+
 from __future__ import annotations
+import logging
 
 import asyncio
 import copy
@@ -71,29 +73,37 @@ class ReconciledTransaction:
 
 
 def _log(logger: Optional[Callable[[str], None]], message: str) -> None:
+    """Function docstring."""
     if logger is not None:
         logger(message)
 
 
 def _timestamp_suffix() -> str:
+    """Function docstring."""
     return datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
 
 
 def _utcnow() -> str:
+    """Function docstring."""
     return datetime.utcnow().isoformat()
 
 
 def _path_key(path: Path | str) -> str:
+    """Function docstring."""
     return str(Path(path).expanduser())
 
 
-def _compute_backoff_delay(attempt: int, *, retry_after: Optional[float] = None) -> float:
+def _compute_backoff_delay(
+    attempt: int, *, retry_after: Optional[float] = None
+) -> float:
+    """Function docstring."""
     if retry_after is not None:
         return max(0.0, min(float(retry_after), MAX_BACKOFF_SECONDS))
-    return min(BASE_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
+    return min(BASE_BACKOFF_SECONDS * (2**attempt), MAX_BACKOFF_SECONDS)
 
 
 def _parse_retry_after(value: Any) -> Optional[float]:
+    """Function docstring."""
     if value in (None, ""):
         return None
 
@@ -122,6 +132,7 @@ def _parse_retry_after(value: Any) -> Optional[float]:
 
 
 def _extract_retry_after_from_payload(payload: Any) -> Optional[float]:
+    """Function docstring."""
     if not isinstance(payload, dict):
         return None
 
@@ -134,7 +145,10 @@ def _extract_retry_after_from_payload(payload: Any) -> Optional[float]:
     return _parse_retry_after(payload.get("retry_after"))
 
 
-def _read_http_error_payload(exc: urllib.error.HTTPError) -> tuple[bytes, Optional[Any]]:
+def _read_http_error_payload(
+    exc: urllib.error.HTTPError,
+) -> tuple[bytes, Optional[Any]]:
+    """Function docstring."""
     try:
         raw = exc.read()
     except Exception:
@@ -150,6 +164,7 @@ def _read_http_error_payload(exc: urllib.error.HTTPError) -> tuple[bytes, Option
 
 
 def _http_error_message(exc: urllib.error.HTTPError, payload: Any) -> str:
+    """Function docstring."""
     if isinstance(payload, dict):
         for key in ("error", "message", "description"):
             value = payload.get(key)
@@ -163,6 +178,7 @@ def _http_error_message(exc: urllib.error.HTTPError, payload: Any) -> str:
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
+    """Function docstring."""
     try:
         if value in (None, ""):
             return default
@@ -172,6 +188,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def _extract_timestamp(value: Any) -> Optional[float]:
+    """Function docstring."""
     if value is None:
         return None
 
@@ -202,6 +219,7 @@ def _extract_timestamp(value: Any) -> Optional[float]:
 
 
 def is_retryable_exception(exc: Exception) -> bool:
+    """Function docstring."""
     if isinstance(exc, (TimeoutError, socket.timeout, ConnectionError, ssl.SSLError)):
         return True
     if isinstance(exc, urllib.error.URLError):
@@ -220,6 +238,7 @@ def call_with_retry(
     describe: str = "operation",
     is_retryable: Optional[Callable[[Exception], bool]] = None,
 ) -> T:
+    """Function docstring."""
     retry_checker = is_retryable or is_retryable_exception
     last_error: Optional[Exception] = None
 
@@ -250,6 +269,7 @@ def request_json(
     logger: Optional[Callable[[str], None]] = None,
     describe: str = "HTTP request",
 ) -> Any:
+    """Function docstring."""
     request = (
         request_or_url
         if isinstance(request_or_url, urllib.request.Request)
@@ -265,7 +285,11 @@ def request_json(
         except urllib.error.HTTPError as exc:
             last_error = exc
             raw_payload, parsed_payload = _read_http_error_payload(exc)
-            retry_after = _parse_retry_after(exc.headers.get("Retry-After")) if exc.headers else None
+            retry_after = (
+                _parse_retry_after(exc.headers.get("Retry-After"))
+                if exc.headers
+                else None
+            )
             if retry_after is None:
                 retry_after = _extract_retry_after_from_payload(parsed_payload)
 
@@ -281,7 +305,9 @@ def request_json(
             if parsed_payload is not None:
                 raise RuntimeError(_http_error_message(exc, parsed_payload)) from exc
             if raw_payload:
-                raise RuntimeError(raw_payload.decode("utf-8", errors="replace")) from exc
+                raise RuntimeError(
+                    raw_payload.decode("utf-8", errors="replace")
+                ) from exc
             raise
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             last_error = exc
@@ -317,13 +343,16 @@ async def async_request_json(
     logger: Optional[Callable[[str], None]] = None,
     describe: str = "HTTP request",
 ) -> Any:
+    """Function docstring."""
     import aiohttp
 
     last_error: Optional[Exception] = None
 
     for attempt in range(max_retries + 1):
         try:
-            async with session.get(url, params=params, headers=dict(headers or {}), timeout=timeout) as response:
+            async with session.get(
+                url, params=params, headers=dict(headers or {}), timeout=timeout
+            ) as response:
                 raw_text = await response.text()
 
                 if response.status >= 400:
@@ -333,11 +362,16 @@ async def async_request_json(
                     except (TypeError, ValueError, json.JSONDecodeError):
                         parsed_payload = None
 
-                    retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+                    retry_after = _parse_retry_after(
+                        response.headers.get("Retry-After")
+                    )
                     if retry_after is None:
                         retry_after = _extract_retry_after_from_payload(parsed_payload)
 
-                    if response.status in RETRYABLE_HTTP_STATUS_CODES and attempt < max_retries:
+                    if (
+                        response.status in RETRYABLE_HTTP_STATUS_CODES
+                        and attempt < max_retries
+                    ):
                         delay = _compute_backoff_delay(attempt, retry_after=retry_after)
                         _log(
                             logger,
@@ -349,7 +383,9 @@ async def async_request_json(
                     if parsed_payload is not None:
                         raise RuntimeError(
                             _http_error_message(
-                                urllib.error.HTTPError(url, response.status, "", None, None),
+                                urllib.error.HTTPError(
+                                    url, response.status, "", None, None
+                                ),
                                 parsed_payload,
                             )
                         )
@@ -363,10 +399,18 @@ async def async_request_json(
                         raise
 
                     delay = _compute_backoff_delay(attempt)
-                    _log(logger, f"{describe} returned invalid JSON. Retrying in {delay:.1f}s.")
+                    _log(
+                        logger,
+                        f"{describe} returned invalid JSON. Retrying in {delay:.1f}s.",
+                    )
                     await sleep_fn(delay)
                     continue
-        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError) as exc:
+        except (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            TimeoutError,
+            OSError,
+        ) as exc:
             last_error = exc
             if attempt >= max_retries or not is_retryable_exception(exc):
                 raise
@@ -385,6 +429,7 @@ def archive_corrupt_file(
     *,
     logger: Optional[Callable[[str], None]] = None,
 ) -> Optional[Path]:
+    """Function docstring."""
     candidate = Path(path)
     if not candidate.exists():
         return None
@@ -396,6 +441,7 @@ def archive_corrupt_file(
 
 
 def is_disk_full_error(exc: BaseException) -> bool:
+    """Function docstring."""
     if not isinstance(exc, OSError):
         return False
     if exc.errno in DISK_FULL_ERRNOS:
@@ -406,11 +452,13 @@ def is_disk_full_error(exc: BaseException) -> bool:
 
 
 def get_memory_only_state(path: Path | str) -> Any:
+    """Function docstring."""
     cached = _MEMORY_ONLY_STATE_CACHE.get(_path_key(path))
     return copy.deepcopy(cached)
 
 
 def in_memory_only_mode(path: Path | str) -> bool:
+    """Function docstring."""
     return _path_key(path) in _MEMORY_ONLY_STATE_CACHE
 
 
@@ -421,6 +469,7 @@ def _remember_memory_only_state(
     logger: Optional[Callable[[str], None]] = None,
     error: Optional[BaseException] = None,
 ) -> None:
+    """Function docstring."""
     key = _path_key(path)
     _MEMORY_ONLY_STATE_CACHE[key] = copy.deepcopy(payload)
     if key in _MEMORY_ONLY_WARNED_PATHS:
@@ -435,12 +484,14 @@ def _remember_memory_only_state(
 
 
 def _clear_memory_only_state(path: Path | str) -> None:
+    """Function docstring."""
     key = _path_key(path)
     _MEMORY_ONLY_STATE_CACHE.pop(key, None)
     _MEMORY_ONLY_WARNED_PATHS.discard(key)
 
 
 def read_json_file(path: Path | str) -> Any:
+    """Function docstring."""
     candidate = Path(path)
     if candidate.exists():
         return json.loads(candidate.read_text(encoding="utf-8"))
@@ -453,6 +504,7 @@ def read_json_file(path: Path | str) -> Any:
 
 
 def _fsync_directory(path: Path) -> None:
+    """Function docstring."""
     if os.name == "nt":
         return
 
@@ -475,6 +527,7 @@ def atomic_write_text(
     *,
     encoding: str = "utf-8",
 ) -> Path:
+    """Function docstring."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -496,8 +549,13 @@ def write_json_state(
     backup_path: Optional[Path | str] = None,
     logger: Optional[Callable[[str], None]] = None,
 ) -> bool:
+    """Function docstring."""
     target = Path(path)
-    backup = Path(backup_path) if backup_path is not None else target.with_suffix(f"{target.suffix}.bak")
+    backup = (
+        Path(backup_path)
+        if backup_path is not None
+        else target.with_suffix(f"{target.suffix}.bak")
+    )
 
     serialized = json.dumps(payload, indent=2, sort_keys=True)
     try:
@@ -520,8 +578,13 @@ def restore_json_from_backup(
     default_factory: Optional[Callable[[], T]] = None,
     logger: Optional[Callable[[str], None]] = None,
 ) -> T:
+    """Function docstring."""
     target = Path(path)
-    backup = Path(backup_path) if backup_path is not None else target.with_suffix(f"{target.suffix}.bak")
+    backup = (
+        Path(backup_path)
+        if backup_path is not None
+        else target.with_suffix(f"{target.suffix}.bak")
+    )
 
     if backup.exists():
         payload = read_json_file(backup)
@@ -539,7 +602,10 @@ def restore_json_from_backup(
     return default_factory()
 
 
-def price_age_seconds(price_point: Any, *, now: Optional[float] = None) -> Optional[float]:
+def price_age_seconds(
+    price_point: Any, *, now: Optional[float] = None
+) -> Optional[float]:
+    """Function docstring."""
     timestamp = _extract_timestamp(price_point)
     if timestamp is None:
         return None
@@ -554,6 +620,7 @@ def is_price_stale(
     max_age_seconds: float = PRICE_STALE_AFTER_SECONDS,
     now: Optional[float] = None,
 ) -> bool:
+    """Function docstring."""
     age = price_age_seconds(price_point, now=now)
     if age is None:
         return True
@@ -568,6 +635,7 @@ def prune_stale_price_history(
     logger: Optional[Callable[[str], None]] = None,
     pair_name: Optional[str] = None,
 ) -> bool:
+    """Function docstring."""
     if not history:
         return False
     if not is_price_stale(history[-1], max_age_seconds=max_age_seconds, now=now):
@@ -593,15 +661,21 @@ def _fetch_dexscreener_pairs(
     timeout: float,
     logger: Optional[Callable[[str], None]] = None,
 ) -> Any:
+    """Function docstring."""
     encoded = urllib.parse.quote(token_address.strip(), safe="")
     request = urllib.request.Request(
         f"{TOKENS_BY_ADDRESS_URL}/{SOLANA_CHAIN_ID}/{encoded}",
         headers=DEXSCREENER_HEADERS,
     )
-    return request_json(request, timeout=timeout, logger=logger, describe="DexScreener token pairs")
+    return request_json(
+        request, timeout=timeout, logger=logger, describe="DexScreener token pairs"
+    )
 
 
-def _candidate_price_from_pair(pair: Mapping[str, Any], input_mint: str, output_mint: str) -> Optional[tuple[float, int]]:
+def _candidate_price_from_pair(
+    pair: Mapping[str, Any], input_mint: str, output_mint: str
+) -> Optional[tuple[float, int]]:
+    """Function docstring."""
     base_token = pair.get("baseToken", {}) or {}
     quote_token = pair.get("quoteToken", {}) or {}
     base_address = str(base_token.get("address", "")).strip()
@@ -630,11 +704,14 @@ def fetch_dexscreener_price(
     timeout: float = 10.0,
     logger: Optional[Callable[[str], None]] = None,
 ) -> Optional[dict[str, Any]]:
+    """Function docstring."""
     best: Optional[dict[str, Any]] = None
 
     for token_address in (input_mint, output_mint):
         try:
-            payload = _fetch_dexscreener_pairs(token_address, timeout=timeout, logger=logger)
+            payload = _fetch_dexscreener_pairs(
+                token_address, timeout=timeout, logger=logger
+            )
         except Exception as exc:
             _log(logger, f"DexScreener fallback failed for {token_address}: {exc}")
             continue
@@ -686,6 +763,7 @@ def rpc_request(
     logger: Optional[Callable[[str], None]] = None,
     describe: Optional[str] = None,
 ) -> Any:
+    """Function docstring."""
     request = urllib.request.Request(
         rpc_url,
         data=json.dumps(
@@ -711,7 +789,10 @@ def rpc_request(
     return payload.get("result")
 
 
-def _payload_is_recent(payload: Mapping[str, Any], *, now: float, lookback_seconds: float) -> bool:
+def _payload_is_recent(
+    payload: Mapping[str, Any], *, now: float, lookback_seconds: float
+) -> bool:
+    """Function docstring."""
     timestamp = _extract_timestamp(payload.get("timestamp"))
     if timestamp is None:
         return True
@@ -724,17 +805,22 @@ def _iter_transaction_payloads(
     now: float,
     lookback_seconds: float,
     path: str = "state",
-):
+) -> Any:
+    """Function docstring."""
     if isinstance(node, dict):
         signature = node.get("tx_signature")
         if isinstance(signature, str) and signature.strip():
             status = str(node.get("status", "") or "").lower()
-            if status != "dry_run" and _payload_is_recent(node, now=now, lookback_seconds=lookback_seconds):
+            if status != "dry_run" and _payload_is_recent(
+                node, now=now, lookback_seconds=lookback_seconds
+            ):
                 yield path, node
 
         for key, value in node.items():
             child_path = f"{path}.{key}"
-            yield from _iter_transaction_payloads(value, now=now, lookback_seconds=lookback_seconds, path=child_path)
+            yield from _iter_transaction_payloads(
+                value, now=now, lookback_seconds=lookback_seconds, path=child_path
+            )
         return
 
     if isinstance(node, list):
@@ -753,6 +839,7 @@ def has_reconcilable_transactions(
     lookback_seconds: float = TX_RECONCILIATION_LOOKBACK_SECONDS,
     now: Optional[float] = None,
 ) -> bool:
+    """Function docstring."""
     current_time = time.time() if now is None else float(now)
     return any(
         True
@@ -771,6 +858,7 @@ def get_signature_statuses(
     timeout: float = 10.0,
     logger: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
+    """Function docstring."""
     ordered = [signature for signature in signatures if signature]
     if not ordered:
         return {}
@@ -786,10 +874,16 @@ def get_signature_statuses(
     values = []
     if isinstance(result, dict):
         values = result.get("value", [])
-    return {signature: values[index] if index < len(values) else None for index, signature in enumerate(ordered)}
+    return {
+        signature: values[index] if index < len(values) else None
+        for index, signature in enumerate(ordered)
+    }
 
 
-def _normalize_signature_status(signature: str, payload: Any, *, source: str) -> ReconciledTransaction:
+def _normalize_signature_status(
+    signature: str, payload: Any, *, source: str
+) -> ReconciledTransaction:
+    """Function docstring."""
     if not isinstance(payload, dict):
         return ReconciledTransaction(
             signature=signature,
@@ -827,6 +921,7 @@ def reconcile_transaction_state(
     logger: Optional[Callable[[str], None]] = None,
     now: Optional[float] = None,
 ) -> dict[str, Any]:
+    """Function docstring."""
     current_time = time.time() if now is None else float(now)
     updated_state = copy.deepcopy(dict(state))
     tracked_payloads = list(
@@ -837,8 +932,12 @@ def reconcile_transaction_state(
         )
     )
 
-    signatures = list(dict.fromkeys(payload["tx_signature"] for _path, payload in tracked_payloads))
-    statuses = get_signature_statuses(signatures, rpc_url=rpc_url, timeout=timeout, logger=logger)
+    signatures = list(
+        dict.fromkeys(payload["tx_signature"] for _path, payload in tracked_payloads)
+    )
+    statuses = get_signature_statuses(
+        signatures, rpc_url=rpc_url, timeout=timeout, logger=logger
+    )
 
     reconciled: list[ReconciledTransaction] = []
     changed = False
@@ -846,7 +945,9 @@ def reconcile_transaction_state(
 
     for path, payload in tracked_payloads:
         signature = str(payload["tx_signature"])
-        tx_status = _normalize_signature_status(signature, statuses.get(signature), source=path)
+        tx_status = _normalize_signature_status(
+            signature, statuses.get(signature), source=path
+        )
         reconciled.append(tx_status)
 
         original_status = str(payload.get("status", "") or "")

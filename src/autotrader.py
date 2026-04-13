@@ -3,6 +3,8 @@ Jupiter Sentinel - Autonomous Trader
 Wires the scanner, risk manager, executor, and oracle into
 one persistent trading loop with restart recovery.
 """
+
+import logging
 import argparse
 import signal
 import sys
@@ -12,7 +14,14 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Callable, Optional
 
-from .config import DATA_DIR, MAX_POSITION_USD, SCAN_INTERVAL_SECS, SCAN_PAIRS, SOL_MINT, USDC_MINT
+from .config import (
+    DATA_DIR,
+    MAX_POSITION_USD,
+    SCAN_INTERVAL_SECS,
+    SCAN_PAIRS,
+    SOL_MINT,
+    USDC_MINT,
+)
 from .executor import TradeExecutor
 from .oracle import PriceFeed
 from .regime_detector import RegimeDetector, MarketRegime
@@ -51,6 +60,7 @@ class AutoTrader:
         risk_manager: Optional[RiskManager] = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Function docstring."""
         if enter_on not in {"down", "up", "all"}:
             raise ValueError("enter_on must be one of: down, up, all")
         if entry_amount_sol <= 0:
@@ -80,7 +90,10 @@ class AutoTrader:
         self.running = False
         self.cycle = 0
         self.position_meta: dict[str, dict[str, Any]] = {}
-        self.pair_lookup = {name: (input_mint, output_mint) for input_mint, output_mint, name in SCAN_PAIRS}
+        self.pair_lookup = {
+            name: (input_mint, output_mint)
+            for input_mint, output_mint, name in SCAN_PAIRS
+        }
         self._feed_by_pair: dict[str, PriceFeed] = {}
         self._index_scanner_feeds()
         state = self.state_manager.load_into_trader(self)
@@ -90,7 +103,9 @@ class AutoTrader:
         """Start the continuous trading loop."""
         self.running = True
         iteration = 0
-        self.state_manager.start_autosave(lambda: self.state_manager.save_trader_state(self))
+        self.state_manager.start_autosave(
+            lambda: self.state_manager.save_trader_state(self)
+        )
 
         self._log("AUTO TRADER START")
         self._log(f"Mode: {'DRY RUN' if self.dry_run else 'LIVE'}")
@@ -106,7 +121,9 @@ class AutoTrader:
             f"{balance.get('sol', 0.0):.6f} SOL (${balance.get('usd_value', 0.0):.2f})"
         )
         if self.risk_manager.positions:
-            self._log(f"Recovered {len(self.risk_manager.positions)} open position(s) from state")
+            self._log(
+                f"Recovered {len(self.risk_manager.positions)} open position(s) from state"
+            )
 
         try:
             while self.running:
@@ -173,13 +190,21 @@ class AutoTrader:
         )
 
         if pair in self.position_meta or any(
-            position.pair == pair and position.status == "open" for position in self.risk_manager.positions
+            position.pair == pair and position.status == "open"
+            for position in self.risk_manager.positions
         ):
             self._log(f"Skipping {pair}: position already open")
             return
 
-        open_positions = [position for position in self.risk_manager.positions if position.status == "open"]
-        if self.max_open_positions is not None and len(open_positions) >= self.max_open_positions:
+        open_positions = [
+            position
+            for position in self.risk_manager.positions
+            if position.status == "open"
+        ]
+        if (
+            self.max_open_positions is not None
+            and len(open_positions) >= self.max_open_positions
+        ):
             self._log(f"Skipping {pair}: max open positions reached")
             return
 
@@ -245,7 +270,9 @@ class AutoTrader:
 
         if entry_result.get("status") not in SUCCESS_STATUSES:
             self._rollback_open_position(pair, position)
-            self._log(f"Entry failed for {pair}: {entry_result.get('error', 'unknown error')}")
+            self._log(
+                f"Entry failed for {pair}: {entry_result.get('error', 'unknown error')}"
+            )
             return
 
         entry_amount_units = int(entry_result.get("out_amount", 0) or 0)
@@ -285,7 +312,9 @@ class AutoTrader:
             self._log(f"Exit triggered for {pair}, but no position metadata was found")
             return
         if closed_record is None:
-            self._log(f"Exit triggered for {pair}, but no closed position record was found")
+            self._log(
+                f"Exit triggered for {pair}, but no closed position record was found"
+            )
             return
 
         amount_units = int(meta.get("entry_amount_units", 0) or 0)
@@ -304,7 +333,9 @@ class AutoTrader:
         if exit_result.get("status") not in SUCCESS_STATUSES:
             closed_record["exit_result"] = dict(exit_result)
             self._restore_closed_position(closed_record)
-            self._log(f"Exit failed for {pair}: {exit_result.get('error', 'unknown error')}")
+            self._log(
+                f"Exit failed for {pair}: {exit_result.get('error', 'unknown error')}"
+            )
             return
 
         closed_record["meta"] = dict(meta)
@@ -313,13 +344,17 @@ class AutoTrader:
 
         entry_amount_lamports = int(meta.get("entry_amount_lamports", 0) or 0)
         exit_amount_lamports = int(exit_result.get("out_amount", 0) or 0)
-        realized_profit_sol = max((exit_amount_lamports - entry_amount_lamports) / 1e9, 0.0)
+        realized_profit_sol = max(
+            (exit_amount_lamports - entry_amount_lamports) / 1e9, 0.0
+        )
         if realized_profit_sol > 0:
             closed_record["realized_profit_sol"] = realized_profit_sol
             if not self.dry_run:
                 locked_profit_sol = self.state_manager.lock_profit(realized_profit_sol)
                 closed_record["locked_profit_sol"] = locked_profit_sol
-                self._log(f"Locked {locked_profit_sol:.6f} SOL from realized profit on {pair}")
+                self._log(
+                    f"Locked {locked_profit_sol:.6f} SOL from realized profit on {pair}"
+                )
 
         self.position_meta.pop(pair, None)
         self._log(
@@ -330,6 +365,7 @@ class AutoTrader:
         self.save_state()
 
     def _rollback_open_position(self, pair: str, position: Position) -> None:
+        """Function docstring."""
         if position in self.risk_manager.positions:
             self.risk_manager.positions.remove(position)
         self.risk_manager.price_feeds.pop(pair, None)
@@ -359,6 +395,7 @@ class AutoTrader:
             pass
 
     def _find_closed_record(self, pair: str) -> Optional[dict[str, Any]]:
+        """Function docstring."""
         for record in reversed(self.risk_manager.closed_positions):
             position = record.get("position")
             if isinstance(position, Position) and position.pair == pair:
@@ -366,9 +403,13 @@ class AutoTrader:
         return None
 
     def _index_scanner_feeds(self) -> None:
+        """Function docstring."""
         self._feed_by_pair = {feed.pair_name: feed for feed in self.scanner.feeds}
 
-    def _ensure_scanner_feed(self, pair: str, input_mint: str, output_mint: str) -> PriceFeed:
+    def _ensure_scanner_feed(
+        self, pair: str, input_mint: str, output_mint: str
+    ) -> PriceFeed:
+        """Function docstring."""
         feed = self._feed_by_pair.get(pair)
         if feed is not None:
             return feed
@@ -379,6 +420,7 @@ class AutoTrader:
         return feed
 
     def _resolve_pair(self, pair: str) -> Optional[tuple[str, str]]:
+        """Function docstring."""
         if pair in self.pair_lookup:
             return self.pair_lookup[pair]
 
@@ -390,6 +432,7 @@ class AutoTrader:
         return None
 
     def _derive_held_mint(self, input_mint: str, output_mint: str) -> Optional[str]:
+        """Function docstring."""
         if input_mint not in {SOL_MINT, USDC_MINT}:
             return input_mint
         if output_mint not in {SOL_MINT, USDC_MINT}:
@@ -397,6 +440,7 @@ class AutoTrader:
         return None
 
     def _reconcile_startup_state(self, state: dict[str, Any]) -> None:
+        """Function docstring."""
         if not has_reconcilable_transactions(state):
             return
 
@@ -420,13 +464,21 @@ class AutoTrader:
             self.state_manager.load_into_trader(self)
 
     def _log(self, message: str) -> None:
+        """Function docstring."""
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] {sanitize_sensitive_text(message)}")
+        logging.debug("%s", f"[{timestamp}] {sanitize_sensitive_text(message)}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Persistent autonomous Jupiter trading loop")
-    parser.add_argument("--live", action="store_true", help="Execute real swaps instead of dry-run quotes")
+    """Function docstring."""
+    parser = argparse.ArgumentParser(
+        description="Persistent autonomous Jupiter trading loop"
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Execute real swaps instead of dry-run quotes",
+    )
     parser.add_argument(
         "--entry-amount-sol",
         type=float,
@@ -467,6 +519,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    """Function docstring."""
     args = build_arg_parser().parse_args(argv)
     trader = AutoTrader(
         dry_run=not args.live,
@@ -478,6 +531,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     def handle_signal(sig: int, frame: Optional[FrameType]) -> None:
+        """Function docstring."""
         del sig, frame
         trader.stop()
         raise SystemExit(0)

@@ -2,6 +2,8 @@
 Jupiter Sentinel - Main Entry Point
 Autonomous AI DeFi agent that combines multiple Jupiter APIs.
 """
+
+import logging
 import time
 import json
 import signal
@@ -28,8 +30,9 @@ class JupiterSentinel:
     - Risk Manager (Stop-loss, Position sizing)
     - Route Arbitrage Detector
     """
-    
+
     def __init__(self, dry_run: bool = True) -> None:
+        """Function docstring."""
         self.dry_run = dry_run
         self.scanner = VolatilityScanner()
         self.executor = TradeExecutor()
@@ -38,113 +41,138 @@ class JupiterSentinel:
         self.sentiment = SentimentAnalyzer()
         self.running = False
         self.cycle = 0
-    
+
     def start(self) -> None:
         """Start the sentinel agent."""
-        print()
-        print("JUPITER SENTINEL")
-        print("=" * 50)
-        print("Autonomous AI DeFi Agent")
-        print()
-        
+        logging.debug("")
+        logging.debug("%s", "JUPITER SENTINEL")
+        logging.debug("%s", "=" * 50)
+        logging.debug("%s", "Autonomous AI DeFi Agent")
+        logging.debug("")
+
         # Show wallet info
         balance = self.executor.get_balance()
-        print(f"Wallet: {display_wallet_status(balance.get('address'))}")
-        print(f"Balance: {balance['sol']:.6f} SOL (${balance['usd_value']:.2f})")
-        print(f"SOL Price: ${balance['sol_price']:.2f}")
-        print()
-        
+        logging.debug("%s", f"Wallet: {display_wallet_status(balance.get('address'))}")
+        logging.debug(
+            "%s", f"Balance: {balance['sol']:.6f} SOL (${balance['usd_value']:.2f})"
+        )
+        logging.debug("%s", f"SOL Price: ${balance['sol_price']:.2f}")
+        logging.debug("")
+
         if self.dry_run:
-            print("MODE: DRY RUN (no real trades)")
+            logging.debug("%s", "MODE: DRY RUN (no real trades)")
         else:
-            print("MODE: LIVE TRADING")
-        print()
-        
-        print(f"Monitoring: {', '.join(p[2] for p in SCAN_PAIRS)}")
-        print()
-        
+            logging.debug("%s", "MODE: LIVE TRADING")
+        logging.debug("")
+
+        logging.debug("%s", f"Monitoring: {', '.join(p[2] for p in SCAN_PAIRS)}")
+        logging.debug("")
+
         # Run arbitrage scan first
-        print("Running initial arbitrage scan...")
+        logging.debug("%s", "Running initial arbitrage scan...")
         arb_report = self.arbitrage.scan_all(SCAN_PAIRS)
         if arb_report["opportunities"]:
             for opp in arb_report["opportunities"]:
-                print(f"  {opp['pair']}: {opp['spread']} spread")
+                logging.debug("%s", f"  {opp['pair']}: {opp['spread']} spread")
         else:
-            print("  No route arbitrage detected (market efficient)")
-        print()
-        
+            logging.debug("%s", "  No route arbitrage detected (market efficient)")
+        logging.debug("")
+
         # Start scanning
-        print("Starting volatility scanner...")
+        logging.debug("%s", "Starting volatility scanner...")
         self.running = True
-        
+
         def on_alert(alerts: list[dict[str, Any]]) -> None:
+            """Function docstring."""
             for a in alerts:
                 self._handle_alert(a)
-        
+
         try:
             self.scanner.scan_loop(callback=on_alert)
         except KeyboardInterrupt:
             self.shutdown()
-    
+
     def _handle_alert(self, alert: dict[str, Any]) -> None:
         """Handle a volatility alert from the scanner."""
         self.cycle += 1
-        
-        print()
-        print(f"{'='*50}")
-        print(f"ALERT #{self.cycle} | {alert['timestamp'][:19]}")
-        print(f"  {alert['pair']} {alert['direction']} {abs(alert['change_pct']):.2f}%")
-        print(f"  Price: ${alert['price']:.4f} | Severity: {alert['severity']}")
-        
+
+        logging.debug("")
+        logging.debug("%s", f"{'='*50}")
+        logging.debug("%s", f"ALERT #{self.cycle} | {alert['timestamp'][:19]}")
+        logging.debug(
+            "%s",
+            f"  {alert['pair']} {alert['direction']} {abs(alert['change_pct']):.2f}%",
+        )
+        logging.debug(
+            "%s", f"  Price: ${alert['price']:.4f} | Severity: {alert['severity']}"
+        )
+
         # Check for arbitrage on this pair
         for input_mint, output_mint, name in SCAN_PAIRS:
             if name == alert["pair"]:
                 opps = self.arbitrage.scan_pair(input_mint, output_mint, name)
                 for o in opps:
-                    print(f"  ARB: {o.spread_pct:.2f}% spread via {o.buy_route}")
+                    logging.debug(
+                        "%s", f"  ARB: {o.spread_pct:.2f}% spread via {o.buy_route}"
+                    )
                 break
-        
+
         # Risk check existing positions
         actions = self.risk_manager.check_positions()
         for a in actions:
-            print(f"  RISK: {a['type']} on {a['pair']} | PnL: {a['pnl_pct']:+.2f}%")
-        
+            logging.debug(
+                "%s", f"  RISK: {a['type']} on {a['pair']} | PnL: {a['pnl_pct']:+.2f}%"
+            )
+
         # AI decision: should we trade?
         if alert["severity"] == "HIGH" and abs(alert["change_pct"]) > 5:
             if alert["direction"] == "DOWN" and not self.dry_run:
                 if self.sentiment.is_extreme_fear():
-                    print(f"  DECISION: AVOID BUY - market is in extreme fear")
+                    logging.debug(
+                        "%s", f"  DECISION: AVOID BUY - market is in extreme fear"
+                    )
                 else:
                     # Buy the dip (contrarian)
-                    print(f"  DECISION: BUY (contrarian) - price dropped significantly")
+                    logging.debug(
+                        "%s",
+                        f"  DECISION: BUY (contrarian) - price dropped significantly",
+                    )
             elif alert["direction"] == "UP" and not self.dry_run:
-                print(f"  DECISION: WATCH - momentum spike, waiting for pullback")
+                logging.debug(
+                    "%s", f"  DECISION: WATCH - momentum spike, waiting for pullback"
+                )
             else:
-                print(f"  DECISION: OBSERVE - collecting data")
-        
-        print(f"{'='*50}")
-    
+                logging.debug("%s", f"  DECISION: OBSERVE - collecting data")
+
+        logging.debug("%s", f"{'='*50}")
+
     def shutdown(self) -> None:
         """Graceful shutdown with report."""
         self.running = False
         self.scanner.stop()
-        
-        print()
-        print("SENTINEL SHUTDOWN")
-        print("=" * 50)
-        
+
+        logging.debug("")
+        logging.debug("%s", "SENTINEL SHUTDOWN")
+        logging.debug("%s", "=" * 50)
+
         # Final report
         report = self.risk_manager.get_portfolio_report()
         scanner_report = self.scanner.get_report()
-        
-        print(f"Wallet: {report['wallet']['sol']:.6f} SOL (${report['wallet']['usd_value']:.2f})")
-        print(f"Total alerts: {scanner_report['total_alerts']}")
-        print(f"Total trades: {report['total_trades']}")
-        print(f"Open positions: {len(report['open_positions'])}")
-        print(f"Arb opportunities found: {len(self.arbitrage.opportunities)}")
-        
+
+        logging.debug(
+            "%s",
+            f"Wallet: {report['wallet']['sol']:.6f} SOL (${report['wallet']['usd_value']:.2f})",
+        )
+        logging.debug("%s", f"Total alerts: {scanner_report['total_alerts']}")
+        logging.debug("%s", f"Total trades: {report['total_trades']}")
+        logging.debug("%s", f"Open positions: {len(report['open_positions'])}")
+        logging.debug(
+            "%s", f"Arb opportunities found: {len(self.arbitrage.opportunities)}"
+        )
+
         # Save reports
         from .config import DATA_DIR
+
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
         report_path = DATA_DIR / f"report_{ts}.json"
@@ -161,18 +189,19 @@ class JupiterSentinel:
             ),
         )
 
-        print(f"\nReport saved to {report_path}")
+        logging.debug("%s", f"\nReport saved to {report_path}")
 
 
 def main() -> None:
     """Main entry point."""
     dry_run = "--live" not in sys.argv
     sentinel = JupiterSentinel(dry_run=dry_run)
-    
+
     def sig_handler(sig: int, frame: Optional[FrameType]) -> None:
+        """Function docstring."""
         sentinel.shutdown()
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, sig_handler)
     sentinel.start()
 

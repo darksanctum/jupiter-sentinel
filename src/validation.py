@@ -1,7 +1,9 @@
 """
 Validation helpers for untrusted configuration and request parameters.
 """
+
 from __future__ import annotations
+import logging
 
 import ipaddress
 import math
@@ -93,12 +95,17 @@ def build_jupiter_quote_url(
         ("inputMint", validate_solana_address(input_mint, "input_mint")),
         ("outputMint", validate_solana_address(output_mint, "output_mint")),
         ("amount", str(validate_int(amount, "amount", minimum=1))),
-        ("slippageBps", str(validate_int(slippage_bps, "slippage_bps", minimum=0, maximum=10_000))),
+        (
+            "slippageBps",
+            str(validate_int(slippage_bps, "slippage_bps", minimum=0, maximum=10_000)),
+        ),
     ]
 
     if only_direct_routes is not None:
         params.append(("onlyDirectRoutes", "true" if only_direct_routes else "false"))
     if as_legacy_transaction is not None:
-        params.append(("asLegacyTransaction", "true" if as_legacy_transaction else "false"))
+        params.append(
+            ("asLegacyTransaction", "true" if as_legacy_transaction else "false")
+        )
 
     return f"{base_url}/quote?{urlencode(params)}"

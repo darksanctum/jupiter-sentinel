@@ -2,7 +2,9 @@
 Jupiter Sentinel - State Manager
 Persists bot runtime state, profit locks, and crash recovery snapshots.
 """
+
 from __future__ import annotations
+import logging
 
 import json
 import threading
@@ -32,6 +34,7 @@ BOT_CONFIG_FIELDS = (
 
 
 def _utcnow() -> str:
+    """Function docstring."""
     return datetime.utcnow().isoformat()
 
 
@@ -42,6 +45,7 @@ class StateManager:
         auto_save_interval: float = 5.0,
         logger: Optional[Callable[[str], None]] = None,
     ) -> None:
+        """Function docstring."""
         self.path = Path(path).expanduser()
         self.backup_path = self.path.with_suffix(f"{self.path.suffix}.bak")
         self.auto_save_interval = float(auto_save_interval)
@@ -55,6 +59,7 @@ class StateManager:
         self._auto_save_callback: Optional[Callable[[], None]] = None
 
     def _default_state(self) -> dict[str, Any]:
+        """Function docstring."""
         return {
             "version": 1,
             "updated_at": _utcnow(),
@@ -76,6 +81,7 @@ class StateManager:
         }
 
     def _normalize(self, snapshot: Optional[dict[str, Any]]) -> dict[str, Any]:
+        """Function docstring."""
         raw = deepcopy(snapshot or {})
         normalized = self._default_state()
 
@@ -83,8 +89,12 @@ class StateManager:
         if not isinstance(positions_section, dict):
             positions_section = {}
 
-        open_positions = deepcopy(raw.get("open_positions", positions_section.get("open", [])))
-        closed_positions = deepcopy(raw.get("closed_positions", positions_section.get("closed", [])))
+        open_positions = deepcopy(
+            raw.get("open_positions", positions_section.get("open", []))
+        )
+        closed_positions = deepcopy(
+            raw.get("closed_positions", positions_section.get("closed", []))
+        )
 
         bot_config = deepcopy(raw.get("bot_config", {}))
         if not isinstance(bot_config, dict):
@@ -109,14 +119,22 @@ class StateManager:
             if isinstance(record, dict)
         )
 
-        explicit_realized = float(explicit_profit_tracking.get("realized_profit_sol", 0.0) or 0.0)
-        explicit_locked = float(explicit_profit_tracking.get("locked_profit_sol", 0.0) or 0.0)
+        explicit_realized = float(
+            explicit_profit_tracking.get("realized_profit_sol", 0.0) or 0.0
+        )
+        explicit_locked = float(
+            explicit_profit_tracking.get("locked_profit_sol", 0.0) or 0.0
+        )
         explicit_locked_balance = float(raw.get("locked_balance", 0.0) or 0.0)
 
         realized_total = max(explicit_realized, realized_from_records)
-        locked_total = max(explicit_locked_balance, explicit_locked, locked_from_records)
+        locked_total = max(
+            explicit_locked_balance, explicit_locked, locked_from_records
+        )
 
-        normalized["version"] = int(raw.get("version", normalized["version"]) or normalized["version"])
+        normalized["version"] = int(
+            raw.get("version", normalized["version"]) or normalized["version"]
+        )
         normalized["updated_at"] = raw.get("updated_at") or _utcnow()
         normalized["bot_config"] = bot_config
         normalized["positions"] = {
@@ -140,15 +158,21 @@ class StateManager:
         return normalized
 
     def _read_json(self, path: Path) -> dict[str, Any]:
+        """Function docstring."""
         return read_json_file(path)
 
     def _archive_corrupt_file(self, path: Path) -> Optional[Path]:
+        """Function docstring."""
         return archive_corrupt_file(path, logger=self.logger)
 
     def _atomic_write(self, payload: dict[str, Any]) -> None:
-        write_json_state(self.path, payload, backup_path=self.backup_path, logger=self.logger)
+        """Function docstring."""
+        write_json_state(
+            self.path, payload, backup_path=self.backup_path, logger=self.logger
+        )
 
     def save(self, snapshot: Optional[dict[str, Any]]) -> dict[str, Any]:
+        """Function docstring."""
         with self._lock:
             payload = self._normalize(snapshot)
             payload["updated_at"] = _utcnow()
@@ -158,6 +182,7 @@ class StateManager:
             return deepcopy(payload)
 
     def load(self) -> dict[str, Any]:
+        """Function docstring."""
         with self._lock:
             recovered_from_backup = False
 
@@ -212,6 +237,7 @@ class StateManager:
             return deepcopy(self._data)
 
     def update(self, **kwargs: Any) -> dict[str, Any]:
+        """Function docstring."""
         with self._lock:
             current = deepcopy(self._data if self._data else self.load())
             for key, value in kwargs.items():
@@ -224,6 +250,7 @@ class StateManager:
             return deepcopy(self._data)
 
     def _auto_save_loop(self) -> None:
+        """Function docstring."""
         while not self._auto_save_stop.wait(self.auto_save_interval):
             try:
                 callback = self._auto_save_callback
@@ -238,15 +265,19 @@ class StateManager:
                 self.logger(f"Auto-save error: {exc}")
 
     def start_autosave(self, callback: Optional[Callable[[], None]] = None) -> None:
+        """Function docstring."""
         with self._lock:
             if self._auto_save_thread and self._auto_save_thread.is_alive():
                 return
             self._auto_save_callback = callback
             self._auto_save_stop.clear()
-            self._auto_save_thread = threading.Thread(target=self._auto_save_loop, daemon=True)
+            self._auto_save_thread = threading.Thread(
+                target=self._auto_save_loop, daemon=True
+            )
             self._auto_save_thread.start()
 
     def stop_autosave(self) -> None:
+        """Function docstring."""
         thread = self._auto_save_thread
         if thread is None:
             return
@@ -257,12 +288,15 @@ class StateManager:
         self._auto_save_callback = None
 
     def start_auto_save(self) -> None:
+        """Function docstring."""
         self.start_autosave()
 
     def stop_auto_save(self) -> None:
+        """Function docstring."""
         self.stop_autosave()
 
     def get_locked_balance(self) -> float:
+        """Function docstring."""
         with self._lock:
             if not self.path.exists():
                 return 0.0
@@ -270,12 +304,15 @@ class StateManager:
             return float(payload.get("locked_balance", 0.0) or 0.0)
 
     def lock_profit(self, amount: float, lock_pct: Optional[float] = None) -> float:
+        """Function docstring."""
         amount = float(amount)
         if amount <= 0:
             return 0.0
 
         if lock_pct is None:
-            lock_pct = float(os.environ.get(LOCK_PCT_ENV, DEFAULT_LOCK_PCT) or DEFAULT_LOCK_PCT)
+            lock_pct = float(
+                os.environ.get(LOCK_PCT_ENV, DEFAULT_LOCK_PCT) or DEFAULT_LOCK_PCT
+            )
 
         locked_amount = amount * float(lock_pct)
 
@@ -290,6 +327,7 @@ class StateManager:
         return locked_amount
 
     def _serialize_position(self, position: Any) -> dict[str, Any]:
+        """Function docstring."""
         if isinstance(position, dict):
             return deepcopy(position)
         if is_dataclass(position):
@@ -297,6 +335,7 @@ class StateManager:
         raise TypeError(f"Unsupported position payload: {type(position)!r}")
 
     def _serialize_closed_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Function docstring."""
         payload = {}
         for key, value in record.items():
             if key == "position":
@@ -306,13 +345,16 @@ class StateManager:
         return payload
 
     def _serialize_feed(self, feed: Any) -> dict[str, Any]:
+        """Function docstring."""
         history = []
         for point in list(getattr(feed, "history", [])):
             history.append(
                 {
                     "timestamp": float(getattr(point, "timestamp", 0.0) or 0.0),
                     "price": float(getattr(point, "price", 0.0) or 0.0),
-                    "volume_estimate": float(getattr(point, "volume_estimate", 0.0) or 0.0),
+                    "volume_estimate": float(
+                        getattr(point, "volume_estimate", 0.0) or 0.0
+                    ),
                 }
             )
 
@@ -324,6 +366,7 @@ class StateManager:
         }
 
     def save_trader_state(self, trader: Any) -> dict[str, Any]:
+        """Function docstring."""
         open_positions = []
         for position in getattr(getattr(trader, "risk_manager", None), "positions", []):
             if getattr(position, "status", "") != "open":
@@ -331,13 +374,17 @@ class StateManager:
             open_positions.append(
                 {
                     "position": self._serialize_position(position),
-                    "meta": deepcopy(getattr(trader, "position_meta", {}).get(position.pair, {})),
+                    "meta": deepcopy(
+                        getattr(trader, "position_meta", {}).get(position.pair, {})
+                    ),
                 }
             )
 
         closed_positions = [
             self._serialize_closed_record(record)
-            for record in getattr(getattr(trader, "risk_manager", None), "closed_positions", [])
+            for record in getattr(
+                getattr(trader, "risk_manager", None), "closed_positions", []
+            )
         ]
 
         snapshot = {
@@ -350,7 +397,9 @@ class StateManager:
             "scan_interval_secs": getattr(trader, "scan_interval_secs", None),
             "open_positions": open_positions,
             "closed_positions": closed_positions,
-            "trade_history": deepcopy(getattr(getattr(trader, "executor", None), "trade_history", [])),
+            "trade_history": deepcopy(
+                getattr(getattr(trader, "executor", None), "trade_history", [])
+            ),
             "alerts": deepcopy(getattr(getattr(trader, "scanner", None), "alerts", [])),
             "scanner_feeds": [
                 self._serialize_feed(feed)
@@ -361,6 +410,7 @@ class StateManager:
         return self.save(snapshot)
 
     def _deserialize_position(self, payload: Any) -> Any:
+        """Function docstring."""
         if not isinstance(payload, dict):
             return payload
 
@@ -383,6 +433,7 @@ class StateManager:
         )
 
     def _restore_feed(self, trader: Any, payload: dict[str, Any]) -> Any:
+        """Function docstring."""
         from .oracle import PriceFeed, PricePoint
 
         pair = str(payload.get("pair", ""))
@@ -396,7 +447,9 @@ class StateManager:
                 break
 
         if existing is None:
-            existing = PriceFeed(pair_name=pair, input_mint=input_mint, output_mint=output_mint)
+            existing = PriceFeed(
+                pair_name=pair, input_mint=input_mint, output_mint=output_mint
+            )
             trader.scanner.feeds.append(existing)
 
         history = getattr(existing, "history", None)
@@ -422,6 +475,7 @@ class StateManager:
         return existing
 
     def load_into_trader(self, trader: Any) -> dict[str, Any]:
+        """Function docstring."""
         state = self.load()
 
         bot_config = state.get("bot_config", {})
@@ -461,7 +515,11 @@ class StateManager:
                 risk_manager.positions.append(position)
             meta = deepcopy(record.get("meta", {}))
             trader.position_meta[position.pair] = meta
-            if risk_manager is not None and hasattr(trader, "_resolve_pair") and hasattr(trader, "_ensure_scanner_feed"):
+            if (
+                risk_manager is not None
+                and hasattr(trader, "_resolve_pair")
+                and hasattr(trader, "_ensure_scanner_feed")
+            ):
                 pair_config = trader._resolve_pair(position.pair)
                 input_mint = meta.get("scan_input_mint") or position.input_mint
                 output_mint = meta.get("scan_output_mint") or position.output_mint
@@ -477,7 +535,9 @@ class StateManager:
             if not isinstance(record, dict):
                 continue
             restored = deepcopy(record)
-            restored["position"] = self._deserialize_position(record.get("position", {}))
+            restored["position"] = self._deserialize_position(
+                record.get("position", {})
+            )
             if risk_manager is not None:
                 risk_manager.closed_positions.append(restored)
 

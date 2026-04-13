@@ -1,6 +1,9 @@
 """
 Jupiter Sentinel - Configuration
 """
+
+import logging
+from typing import Any
 import os
 import json
 import stat
@@ -37,12 +40,12 @@ SCAN_PAIRS = [
 ]
 
 # Risk parameters
-MAX_POSITION_USD = 5.0         # Max $5 per position (we're working with small capital)
-STOP_LOSS_BPS = 500            # 5% stop loss
-TAKE_PROFIT_BPS = 1500         # 15% take profit
-VOLATILITY_THRESHOLD = 0.03    # 3% price move = volatile
-SCAN_INTERVAL_SECS = 30        # Scan every 30 seconds
-PRICE_HISTORY_LEN = 60         # Keep 60 data points (30 min at 30s intervals)
+MAX_POSITION_USD = 5.0  # Max $5 per position (we're working with small capital)
+STOP_LOSS_BPS = 500  # 5% stop loss
+TAKE_PROFIT_BPS = 1500  # 15% take profit
+VOLATILITY_THRESHOLD = 0.03  # 3% price move = volatile
+SCAN_INTERVAL_SECS = 30  # Scan every 30 seconds
+PRICE_HISTORY_LEN = 60  # Keep 60 data points (30 min at 30s intervals)
 
 # Paths
 PROJECT_DIR = Path(__file__).parent.parent
@@ -51,7 +54,9 @@ LOGS_DIR = PROJECT_DIR / "logs"
 DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 
+
 def _build_headers() -> dict[str, str]:
+    """Function docstring."""
     headers = {
         "User-Agent": "JupiterSentinel/1.0",
         "Content-Type": "application/json",
@@ -67,6 +72,7 @@ HEADERS = _build_headers()
 
 
 def _get_private_key_path() -> Path:
+    """Function docstring."""
     raw_path = os.environ.get("SOLANA_PRIVATE_KEY_PATH", "").strip()
     if not raw_path:
         raise RuntimeError(
@@ -99,8 +105,12 @@ def load_keypair() -> "Keypair":
 
     if not isinstance(key_bytes, list) or len(key_bytes) != 64:
         raise ValueError("Private key file must contain a 64-byte JSON array")
-    if any(not isinstance(value, int) or value < 0 or value > 255 for value in key_bytes):
-        raise ValueError("Private key file must contain only integer byte values between 0 and 255")
+    if any(
+        not isinstance(value, int) or value < 0 or value > 255 for value in key_bytes
+    ):
+        raise ValueError(
+            "Private key file must contain only integer byte values between 0 and 255"
+        )
 
     return Keypair.from_bytes(bytes(key_bytes))
 

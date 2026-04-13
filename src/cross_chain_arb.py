@@ -2,6 +2,9 @@
 Jupiter Sentinel - Cross-Size Route Arbitrage Detector
 Detects price differences between Jupiter routes at different trade sizes.
 """
+
+import logging
+from typing import Any
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,9 +34,11 @@ class RouteQuote:
 
     @property
     def route_signature(self) -> str:
+        """Function docstring."""
         return " -> ".join(self.route_labels)
 
     def as_dict(self) -> dict:
+        """Function docstring."""
         return {
             "amount": self.amount,
             "out_amount": self.out_amount,
@@ -53,6 +58,7 @@ class RouteSpreadOpportunity:
     estimated_extra_output: int
 
     def as_dict(self) -> dict:
+        """Function docstring."""
         return {
             "pair": self.pair,
             "spread_pct": self.spread_pct,
@@ -75,6 +81,7 @@ class CrossChainArbDetector:
         quote_timeout: int = 15,
         require_route_change: bool = True,
     ) -> None:
+        """Function docstring."""
         self.min_spread_pct = min_spread_pct
         self.slippage_bps = slippage_bps
         self.quote_timeout = quote_timeout
@@ -99,7 +106,11 @@ class CrossChainArbDetector:
                 as_legacy_transaction=False,
             )
             req = urllib.request.Request(url, headers=HEADERS)
-            payload = request_json(req, timeout=self.quote_timeout, describe=f"Cross-size quote {pair_name}")
+            payload = request_json(
+                req,
+                timeout=self.quote_timeout,
+                describe=f"Cross-size quote {pair_name}",
+            )
             out_amount = int(payload["outAmount"])
         except Exception:
             return None
@@ -133,7 +144,7 @@ class CrossChainArbDetector:
 
         opportunities: list[RouteSpreadOpportunity] = []
         for index, left in enumerate(quotes):
-            for right in quotes[index + 1:]:
+            for right in quotes[index + 1 :]:
                 opportunity = self._compare_quotes(pair_name, left, right)
                 if opportunity is not None:
                     opportunities.append(opportunity)
@@ -174,6 +185,7 @@ class CrossChainArbDetector:
         left: RouteQuote,
         right: RouteQuote,
     ) -> Optional[RouteSpreadOpportunity]:
+        """Function docstring."""
         if left.output_per_input <= 0 or right.output_per_input <= 0:
             return None
 
@@ -194,7 +206,10 @@ class CrossChainArbDetector:
         )
         reference_amount = min(left.amount, right.amount)
         estimated_extra_output = max(
-            int(reference_amount * (better_quote.output_per_input - worse_quote.output_per_input)),
+            int(
+                reference_amount
+                * (better_quote.output_per_input - worse_quote.output_per_input)
+            ),
             0,
         )
 
@@ -207,6 +222,7 @@ class CrossChainArbDetector:
         )
 
     def _extract_route_labels(self, route_plan: list[dict]) -> tuple[str, ...]:
+        """Function docstring."""
         labels: list[str] = []
 
         for step in route_plan:
@@ -220,6 +236,7 @@ class CrossChainArbDetector:
         return tuple(labels)
 
     def _safe_float(self, value: object, default: float = 0.0) -> float:
+        """Function docstring."""
         try:
             return float(value)
         except (TypeError, ValueError):
@@ -227,21 +244,23 @@ class CrossChainArbDetector:
 
 
 def run_standalone() -> None:
+    """Function docstring."""
     detector = CrossChainArbDetector()
     report = detector.scan_all()
 
-    print("Jupiter Sentinel - Cross-Size Route Arbitrage Detector")
-    print("=" * 60)
+    logging.debug("%s", "Jupiter Sentinel - Cross-Size Route Arbitrage Detector")
+    logging.debug("%s", "=" * 60)
 
     if not report["opportunities"]:
-        print("No cross-size route spreads detected.")
+        logging.debug("%s", "No cross-size route spreads detected.")
         return
 
     for opportunity in report["opportunities"]:
-        print(
+        logging.debug(
+            "%s",
             f"{opportunity['pair']}: {opportunity['spread_pct']:.2f}% spread | "
             f"{opportunity['better_quote']['route']} beats "
-            f"{opportunity['worse_quote']['route']}"
+            f"{opportunity['worse_quote']['route']}",
         )
 
 

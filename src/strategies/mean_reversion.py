@@ -1,7 +1,9 @@
 """
 Mean-reversion strategy based on Bollinger Bands over oracle price history.
 """
+
 from __future__ import annotations
+import logging
 
 import math
 from datetime import datetime
@@ -14,6 +16,7 @@ DEFAULT_STDDEV_MULTIPLIER = 2.0
 
 
 def _mean(values: Iterable[float]) -> float:
+    """Function docstring."""
     values = list(values)
     if not values:
         return 0.0
@@ -21,13 +24,14 @@ def _mean(values: Iterable[float]) -> float:
 
 
 def _population_stddev(values: Iterable[float]) -> float:
+    """Function docstring."""
     values = list(values)
     if len(values) < 2:
         return 0.0
 
     mean_value = _mean(values)
     variance = sum((value - mean_value) ** 2 for value in values) / len(values)
-    return variance ** 0.5
+    return variance**0.5
 
 
 def _build_signal(
@@ -42,6 +46,7 @@ def _build_signal(
     stddev_multiplier: float,
     history_points: int,
 ) -> dict[str, Any]:
+    """Function docstring."""
     direction = "DOWN" if latest_point.price < lower_band else "UP"
     action = "BUY" if direction == "DOWN" else "SELL"
     side = "LONG" if direction == "DOWN" else "SHORT"
@@ -64,7 +69,11 @@ def _build_signal(
         "action": action,
         "side": side,
         "target_price": moving_average,
-        "reason": "price_below_lower_band" if direction == "DOWN" else "price_above_upper_band",
+        "reason": (
+            "price_below_lower_band"
+            if direction == "DOWN"
+            else "price_above_upper_band"
+        ),
         "window": window,
         "stddev_multiplier": stddev_multiplier,
         "data_points": history_points,

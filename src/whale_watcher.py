@@ -1,3 +1,6 @@
+"""Module explaining what this file does."""
+
+from typing import Any
 import json
 import logging
 import os
@@ -12,7 +15,9 @@ from .resilience import call_with_retry
 from .security import sanitize_sensitive_text
 from .validation import validate_solana_address
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 EXCHANGE_WALLETS_ENV = "WHALE_WATCHER_EXCHANGES_JSON"
@@ -22,7 +27,10 @@ LAMPORTS_PER_SOL = 1_000_000_000
 WHALE_THRESHOLD_SOL = 100.0
 
 
-def _load_exchange_wallets(exchange_wallets: Optional[Mapping[str, str]] = None) -> dict[Pubkey, str]:
+def _load_exchange_wallets(
+    exchange_wallets: Optional[Mapping[str, str]] = None,
+) -> dict[Pubkey, str]:
+    """Function docstring."""
     raw_wallets = exchange_wallets
     if raw_wallets is None:
         raw_config = os.environ.get(EXCHANGE_WALLETS_ENV, "").strip()
@@ -30,7 +38,9 @@ def _load_exchange_wallets(exchange_wallets: Optional[Mapping[str, str]] = None)
             return {}
         parsed = json.loads(raw_config)
         if not isinstance(parsed, dict):
-            raise ValueError(f"{EXCHANGE_WALLETS_ENV} must be a JSON object mapping wallet addresses to labels")
+            raise ValueError(
+                f"{EXCHANGE_WALLETS_ENV} must be a JSON object mapping wallet addresses to labels"
+            )
         raw_wallets = {str(address): str(label) for address, label in parsed.items()}
 
     exchanges: dict[Pubkey, str] = {}
@@ -39,6 +49,7 @@ def _load_exchange_wallets(exchange_wallets: Optional[Mapping[str, str]] = None)
         exchanges[Pubkey.from_string(validated_address)] = str(label)
     return exchanges
 
+
 class WhaleWatcher:
     def __init__(
         self,
@@ -46,11 +57,15 @@ class WhaleWatcher:
         *,
         exchange_wallets: Optional[Mapping[str, str]] = None,
     ) -> None:
+        """Function docstring."""
         self.client = Client(rpc_url)
         self.exchanges = _load_exchange_wallets(exchange_wallets)
-        self.last_signatures: Dict[Pubkey, Optional[Signature]] = {pk: None for pk in self.exchanges.keys()}
+        self.last_signatures: Dict[Pubkey, Optional[Signature]] = {
+            pk: None for pk in self.exchanges.keys()
+        }
 
     def start(self, poll_interval: int = 10) -> None:
+        """Function docstring."""
         if not self.exchanges:
             logger.warning(
                 "No exchange wallets configured. Set %s or pass exchange_wallets=... to enable monitoring.",
@@ -60,35 +75,39 @@ class WhaleWatcher:
 
         logger.info("Starting Whale Watcher...")
         logger.info(f"Whale Threshold: {WHALE_THRESHOLD_SOL} SOL")
-        
+
         while True:
             try:
                 self.check_exchanges()
             except Exception as e:
                 logger.error("Error checking exchanges: %s", sanitize_sensitive_text(e))
-            
+
             time.sleep(poll_interval)
 
     def check_exchanges(self) -> None:
+        """Function docstring."""
         for exchange_pubkey, exchange_name in self.exchanges.items():
             self._check_exchange(exchange_pubkey, exchange_name)
 
     def _check_exchange(self, exchange_pubkey: Pubkey, exchange_name: str) -> None:
+        """Function docstring."""
         # Fetch recent signatures for the exchange
         last_sig = self.last_signatures[exchange_pubkey]
         kwargs = {"limit": 10}
         if last_sig is not None:
             kwargs["until"] = last_sig
-            
+
         try:
             response = call_with_retry(
-                lambda: self.client.get_signatures_for_address(exchange_pubkey, **kwargs),
+                lambda: self.client.get_signatures_for_address(
+                    exchange_pubkey, **kwargs
+                ),
                 logger=logger.warning,
                 describe=f"{exchange_name} signature lookup",
             )
             if not response.value:
                 return
-            
+
             signatures = response.value
 
             # Update last signature
@@ -101,12 +120,20 @@ class WhaleWatcher:
             for sig_info in signatures:
                 if sig_info.err is not None:
                     continue  # skip failed txs
-                self._process_transaction(sig_info.signature, exchange_pubkey, exchange_name)
-                
+                self._process_transaction(
+                    sig_info.signature, exchange_pubkey, exchange_name
+                )
+
         except RPCException as e:
-            logger.error("RPC Error fetching signatures for %s: %s", exchange_name, sanitize_sensitive_text(e))
+            logger.error(
+                "RPC Error fetching signatures for %s: %s",
+                exchange_name,
+                sanitize_sensitive_text(e),
+            )
         except Exception as e:
-            logger.error("Error checking %s: %s", exchange_name, sanitize_sensitive_text(e))
+            logger.error(
+                "Error checking %s: %s", exchange_name, sanitize_sensitive_text(e)
+            )
 
     def _process_transaction(
         self,
@@ -114,10 +141,13 @@ class WhaleWatcher:
         exchange_pubkey: Pubkey,
         exchange_name: str,
     ) -> None:
+        """Function docstring."""
         try:
             # fetch transaction info
             tx_resp = call_with_retry(
-                lambda: self.client.get_transaction(signature, max_supported_transaction_version=0),
+                lambda: self.client.get_transaction(
+                    signature, max_supported_transaction_version=0
+                ),
                 logger=logger.warning,
                 describe=f"{exchange_name} transaction lookup",
             )
@@ -126,10 +156,10 @@ class WhaleWatcher:
 
             meta = tx_resp.value.transaction.meta
             if meta.err is not None:
-                return # Transaction failed
+                return  # Transaction failed
 
             tx = tx_resp.value.transaction.transaction
-            
+
             # Find the index of the exchange account
             account_keys = tx.message.account_keys
             exchange_index = -1
@@ -137,28 +167,35 @@ class WhaleWatcher:
                 if key == exchange_pubkey:
                     exchange_index = i
                     break
-                    
+
             if exchange_index == -1:
                 return
-                
+
             pre_balance = meta.pre_balances[exchange_index]
             post_balance = meta.post_balances[exchange_index]
-            
+
             net_change_lamports = post_balance - pre_balance
             net_change_sol = net_change_lamports / LAMPORTS_PER_SOL
-            
+
             if abs(net_change_sol) >= WHALE_THRESHOLD_SOL:
                 if net_change_sol > 0:
                     # Exchange balance increased -> someone sent TO exchange -> SELL SIGNAL
-                    logger.warning(f"🚨 WHALE SELL SIGNAL: {abs(net_change_sol):.2f} SOL moved TO {exchange_name}")
+                    logger.warning(
+                        f"🚨 WHALE SELL SIGNAL: {abs(net_change_sol):.2f} SOL moved TO {exchange_name}"
+                    )
                     logger.info(f"Tx: https://solscan.io/tx/{signature}")
                 else:
                     # Exchange balance decreased -> someone withdrew FROM exchange -> BUY SIGNAL
-                    logger.info(f"🐳 WHALE BUY SIGNAL: {abs(net_change_sol):.2f} SOL moved FROM {exchange_name} to wallet")
+                    logger.info(
+                        f"🐳 WHALE BUY SIGNAL: {abs(net_change_sol):.2f} SOL moved FROM {exchange_name} to wallet"
+                    )
                     logger.info(f"Tx: https://solscan.io/tx/{signature}")
 
         except Exception as e:
-            logger.error("Error processing tx %s: %s", signature, sanitize_sensitive_text(e))
+            logger.error(
+                "Error processing tx %s: %s", signature, sanitize_sensitive_text(e)
+            )
+
 
 if __name__ == "__main__":
     watcher = WhaleWatcher()
