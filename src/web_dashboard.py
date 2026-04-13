@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from .validation import validate_host, validate_port
 from .ml.signal_ensemble import SignalEnsemble, SignalDirection
+from .ml.model_monitor import ModelMonitor
 
 app = FastAPI(title="Jupiter Sentinel Dashboard")
 
@@ -44,8 +45,9 @@ def generate_mock_data() -> Dict[str, Any]:
     ensemble.update_signal("sentiment", SignalDirection.BULLISH, random.uniform(0.5, 0.8))
     ensemble.update_signal("ml_predictor", SignalDirection.BEARISH, random.uniform(0.6, 0.9))
     ensemble.update_signal("regime", SignalDirection.NEUTRAL, random.uniform(0.1, 0.5))
-    
+
     result = ensemble.evaluate()
+    monitor = ModelMonitor()
 
     return {
         "portfolio_value": f"${round(chart_data[-1], 2):,}",
@@ -64,6 +66,7 @@ def generate_mock_data() -> Dict[str, Any]:
         "ensemble_confidence": result.combined_confidence,
         "ensemble_position_size": result.position_size_multiplier,
         "ensemble_breakdown": result.component_breakdown,
+        "ml_status": monitor.get_status(),
     }
 
 
@@ -313,6 +316,19 @@ async def get_dashboard() -> HTMLResponse:
     data = generate_mock_data()
     html_content = _DASHBOARD_TEMPLATE.render(data=data)
     return HTMLResponse(content=html_content)
+
+
+def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Function docstring."""
+    host = validate_host(host)
+    port = validate_port(port)
+    logging.debug("%s", f"Starting web dashboard on http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    start_server()
+MLResponse(content=html_content)
 
 
 def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:

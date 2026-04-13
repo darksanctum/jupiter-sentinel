@@ -37,6 +37,7 @@ from .config import (
 from .resilience import request_json
 from .validation import build_jupiter_quote_url
 from .ml.signal_ensemble import SignalEnsemble, SignalDirection
+from .ml.model_monitor import ModelMonitor
 
 
 def get_sol_price() -> Optional[float]:
@@ -268,19 +269,23 @@ def get_strategy_performance_table() -> Any:
     return table
 
 
-def get_signal_ensemble_panel(ensemble: Any) -> Any:
+def get_signal_ensemble_panel(ensemble: Any, monitor: Any) -> Any:
     """Function docstring."""
     result = ensemble.evaluate()
     direction = result.direction.name
     conf = result.combined_confidence * 100
     pos_mult = result.position_size_multiplier
-    
+    ml_status = monitor.get_status()
+
     color = "green" if result.direction.value > 0 else "red" if result.direction.value < 0 else "yellow"
-    
+
     content = (
         f"[bold white]Master Signal:[/] [bold {color}]{direction}[/]\n"
         f"[dim]Confidence:[/] [cyan]{conf:.1f}%[/]\n"
         f"[dim]Position Size:[/] [magenta]{pos_mult:.2f}x[/]\n\n"
+        f"[bold white]ML Model Performance:[/]\n"
+        f"  Accuracy: [cyan]{ml_status['accuracy']}[/]\n"
+        f"  Multiplier: [magenta]{ml_status['multiplier']}[/] [dim]({ml_status['samples']} samples)[/]\n\n"
         f"[bold white]Strategy Breakdown:[/]\n"
     )
     for name, weight in result.component_breakdown.items():
@@ -385,6 +390,7 @@ def generate_dashboard() -> None:
 
     # Initialize Signal Ensemble
     ensemble = SignalEnsemble()
+    monitor = ModelMonitor()
 
     try:
         with Live(layout, refresh_per_second=2, screen=True):
@@ -427,7 +433,7 @@ def generate_dashboard() -> None:
                 layout["trades"].update(
                     Panel(get_trade_history_table(), border_style="cyan")
                 )
-                layout["ensemble"].update(get_signal_ensemble_panel(ensemble))
+                layout["ensemble"].update(get_signal_ensemble_panel(ensemble, monitor))
                 layout["regime"].update(get_market_regime_panel())
                 layout["profit_locked"].update(
                     get_profit_locked_panel(current_portfolio_value)

@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Optional, Tuple
 
+from src.ml.model_monitor import ModelMonitor
+
 logger = logging.getLogger(__name__)
 
 class SignalDirection(Enum):
@@ -95,6 +97,10 @@ class SignalEnsemble:
         
         # Position size scales with confidence (e.g. nonlinear mapping could be used, keeping it simple here)
         position_size_multiplier = combined_confidence if direction != SignalDirection.NEUTRAL else 0.0
+
+        # Apply ML model performance multiplier
+        ml_multiplier = self.monitor.get_position_size_multiplier()
+        position_size_multiplier *= ml_multiplier
 
         return EnsembleResult(
             direction=direction,
