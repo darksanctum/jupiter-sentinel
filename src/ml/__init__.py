@@ -10,6 +10,16 @@ from .feature_engineer import (
     extract_features_from_history,
     feature_names,
 )
+from .anomaly_detector import (
+    DEFAULT_ANOMALY_CONFIG,
+    AnomalyConfig,
+    AnomalyDetector,
+    AnomalyKind,
+    AnomalySignal,
+    MetricSnapshot,
+    detect_anomaly,
+    detect_anomaly_from_history,
+)
 
 _PREDICTOR_EXPORTS = {
     "DEFAULT_MODEL_DIR",
@@ -37,14 +47,22 @@ def __getattr__(name: str):
 
 __all__ = [
     "DEFAULT_CONFIG",
+    "DEFAULT_ANOMALY_CONFIG",
     "DEFAULT_MODEL_DIR",
+    "AnomalyConfig",
+    "AnomalyDetector",
+    "AnomalyKind",
+    "AnomalySignal",
     "DirectionDataset",
     "DirectionPredictor",
     "EvaluationReport",
     "FeatureConfig",
     "LogisticRegressionConfig",
+    "MetricSnapshot",
     "TrainingResult",
     "build_direction_dataset",
+    "detect_anomaly",
+    "detect_anomaly_from_history",
     "extract_features",
     "extract_features_batch",
     "extract_features_from_history",
