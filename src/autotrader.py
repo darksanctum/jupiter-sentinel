@@ -95,6 +95,11 @@ class AutoTrader:
         self.running = False
         self.cycle = 0
         self.position_meta: dict[str, dict[str, Any]] = {}
+        self.started_at = time.time()
+        self.last_cycle_started_at: Optional[float] = None
+        self.last_successful_cycle_at: Optional[float] = None
+        self.last_error: Optional[str] = None
+        self.last_error_at: Optional[float] = None
         self.pair_lookup = {
             name: (input_mint, output_mint)
             for input_mint, output_mint, name in SCAN_PAIRS
@@ -107,6 +112,11 @@ class AutoTrader:
     def run(self, max_iterations: Optional[int] = None) -> None:
         """Start the continuous trading loop."""
         self.running = True
+        self.started_at = time.time()
+        self.last_cycle_started_at = None
+        self.last_successful_cycle_at = None
+        self.last_error = None
+        self.last_error_at = None
         iteration = 0
         self.state_manager.start_autosave(
             lambda: self.state_manager.save_trader_state(self)
@@ -136,6 +146,7 @@ class AutoTrader:
                     break
 
                 self.cycle += 1
+                self.last_cycle_started_at = time.time()
                 self._log(f"Cycle {self.cycle}")
 
                 try:
@@ -145,9 +156,14 @@ class AutoTrader:
                     for alert in alerts:
                         self._handle_alert(alert)
                     self.save_state()
+                    self.last_successful_cycle_at = time.time()
+                    self.last_error = None
+                    self.last_error_at = None
                 except KeyboardInterrupt:
                     raise
                 except Exception as exc:
+                    self.last_error = str(exc)
+                    self.last_error_at = time.time()
                     self._log(f"Cycle error: {exc}")
                     self.save_state()
 
@@ -490,6 +506,72 @@ class AutoTrader:
         """Function docstring."""
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         logging.debug("%s", f"[{timestamp}] {sanitize_sensitive_text(message)}")
+
+    @staticmethod
+    def _format_health_timestamp(timestamp: Optional[float]) -> Optional[str]:
+        """Convert a POSIX timestamp into an RFC3339-style UTC string."""
+        if timestamp is None:
+            return None
+        return datetime.utcfromtimestamp(timestamp).isoformat(timespec="seconds") + "Z"
+
+    def get_health_snapshot(
+        self, stale_after_secs: float = 180.0
+    ) -> tuple[int, dict[str, Any]]:
+        """Return an HTTP status code and JSON payload for runtime health checks."""
+        now = time.time()
+        open_positions = [
+            position
+            for position in self.risk_manager.positions
+            if position.status == "open"
+        ]
+
+        status = "ok"
+        http_status = 200
+        if not self.running:
+            status = "stopped"
+            http_status = 503
+        elif self.last_successful_cycle_at is None:
+            if self.last_error is not None:
+                status = "error"
+                http_status = 503
+            elif (
+                self.last_cycle_started_at is not None
+                and stale_after_secs > 0
+                and now - self.last_cycle_started_at > stale_after_secs
+            ):
+                status = "stalled"
+                http_status = 503
+            else:
+                status = "starting"
+        elif stale_after_secs > 0 and now - self.last_successful_cycle_at > stale_after_secs:
+            status = "stale"
+            http_status = 503
+        elif self.last_error is not None:
+            status = "degraded"
+
+        payload = {
+            "service": "jupiter-sentinel",
+            "status": status,
+            "healthy": http_status == 200,
+            "mode": "dry-run" if self.dry_run else "live",
+            "cycle": self.cycle,
+            "scan_interval_secs": self.scan_interval_secs,
+            "stale_after_secs": stale_after_secs,
+            "started_at": self._format_health_timestamp(self.started_at),
+            "last_cycle_started_at": self._format_health_timestamp(
+                self.last_cycle_started_at
+            ),
+            "last_successful_cycle_at": self._format_health_timestamp(
+                self.last_successful_cycle_at
+            ),
+            "last_error_at": self._format_health_timestamp(self.last_error_at),
+            "last_error": self.last_error,
+            "uptime_seconds": round(max(now - self.started_at, 0.0), 3),
+            "state_file": str(self.state_path.resolve()),
+            "open_positions": len(open_positions),
+            "closed_positions": len(self.risk_manager.closed_positions),
+        }
+        return http_status, payload
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

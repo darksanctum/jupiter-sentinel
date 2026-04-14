@@ -1,0 +1,63 @@
+{
+  "alerts": [],
+  "bot_config": {
+    "cycle": 0,
+    "dry_run": true,
+    "enter_on": "down",
+    "entry_amount_sol": 0.25,
+    "max_open_positions": null,
+    "scan_interval_secs": 1
+  },
+  "closed_positions": [],
+  "cycle": 0,
+  "dry_run": true,
+  "enter_on": "down",
+  "entry_amount_sol": 0.25,
+  "locked_balance": 0.0,
+  "max_open_positions": null,
+  "open_positions": [],
+  "positions": {
+    "closed": [],
+    "open": []
+  },
+  "profit_tracking": {
+    "locked_profit_sol": 0.0,
+    "realized_profit_sol": 0.0
+  },
+  "scan_interval_secs": 1,
+  "scanner_feeds": [
+    {
+      "history": [],
+      "input_mint": "So11111111111111111111111111111111111111112",
+      "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "pair": "SOL/USDC"
+    },
+    {
+      "history": [],
+      "input_mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+      "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "pair": "JUP/USDC"
+    },
+    {
+      "history": [],
+      "input_mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+      "output_mint": "So11111111111111111111111111111111111111112",
+      "pair": "JUP/SOL"
+    },
+    {
+      "history": [],
+      "input_mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "pair": "BONK/USDC"
+    },
+    {
+      "history": [],
+      "input_mint": "EKpQGSJtjMFqWwMJL7pYqznSHQB3TV8sR4Y5DxmAdJbx",
+      "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "pair": "WIF/USDC"
+    }
+  ],
+  "trade_history": [],
+  "updated_at": "2026-04-14T00:54:49.834120",
+  "version": 1
+}

@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import src.oracle as oracle
 from src.oracle import PriceFeed, PricePoint
+from src.resilience import MAX_API_RETRIES
+from src.validation import build_jupiter_quote_url
 
 VALID_ALT_MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 VALID_OTHER_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
@@ -27,10 +29,11 @@ class FakeResponse:
 def install_urlopen(monkeypatch, *responses):
     queue = list(responses)
     calls = []
+    fallback_response = responses[-1] if responses else None
 
     def fake_urlopen(request, timeout=0):
         calls.append((request, timeout))
-        response = queue.pop(0)
+        response = queue.pop(0) if queue else fallback_response
         if isinstance(response, BaseException):
             raise response
         return FakeResponse(response)
@@ -59,12 +62,14 @@ def test_fetch_price_parses_sol_to_usdc_quote_and_records_history(monkeypatch):
 
     request, timeout = calls[0]
     assert timeout == 10
-    assert request.full_url == (
-        f"{oracle.JUPITER_SWAP_V1}/quote?"
-        f"inputMint={oracle.SOL_MINT}&"
-        f"outputMint={oracle.USDC_MINT}&"
-        f"amount=1000000&"
-        f"slippageBps=50"
+    assert request.full_url == build_jupiter_quote_url(
+        oracle.JUPITER_SWAP_V1,
+        oracle.SOL_MINT,
+        oracle.USDC_MINT,
+        1_000_000,
+        50,
+        swap_mode="ExactIn",
+        restrict_intermediate_tokens=True,
     )
     headers = {key.lower(): value for key, value in request.header_items()}
     assert headers["user-agent"] == oracle.HEADERS["User-Agent"]
@@ -117,16 +122,18 @@ def test_fetch_price_uses_default_decimal_normalization_for_other_outputs(monkey
 
 
 @pytest.mark.parametrize(
-    "response",
+    ("response", "expected_calls"),
     [
-        URLError("network down"),
-        b"not-json",
-        {},
-        {"outAmount": "not-an-int"},
+        (URLError("network down"), MAX_API_RETRIES + 1),
+        (b"not-json", MAX_API_RETRIES + 1),
+        ({}, 1),
+        ({"outAmount": "not-an-int"}, 1),
     ],
     ids=["network-error", "invalid-json", "missing-out-amount", "bad-out-amount"],
 )
-def test_fetch_price_returns_none_and_preserves_history_on_errors(monkeypatch, response):
+def test_fetch_price_returns_none_and_preserves_history_on_errors(
+    monkeypatch, response, expected_calls
+):
     calls = install_urlopen(monkeypatch, response)
     monkeypatch.setattr(oracle, "fetch_dexscreener_price", lambda *args, **kwargs: None)
     feed = PriceFeed("SOL/USDC", oracle.SOL_MINT, oracle.USDC_MINT)
@@ -135,7 +142,7 @@ def test_fetch_price_returns_none_and_preserves_history_on_errors(monkeypatch, r
 
     assert result is None
     assert list(feed.history) == []
-    assert len(calls) == 1
+    assert len(calls) == expected_calls
 
 
 def test_fetch_price_falls_back_to_dexscreener_when_jupiter_is_unavailable(monkeypatch):
@@ -172,7 +179,9 @@ def test_fetch_price_discards_stale_history_before_appending_fresh_quote(monkeyp
 
     point = feed.fetch_price()
 
-    assert point == PricePoint(timestamp=10_000.0, price=175.0)
+    assert point is not None
+    assert point.timestamp == 10_000.0
+    assert point.price == pytest.approx(175.0)
     assert list(feed.history) == [point]
 
 
@@ -185,12 +194,14 @@ def test_get_sol_price_parses_quote_response(monkeypatch):
     assert price == pytest.approx(150.0)
     request, timeout = calls[0]
     assert timeout == 10
-    assert request.full_url == (
-        f"{oracle.JUPITER_SWAP_V1}/quote?"
-        f"inputMint={oracle.SOL_MINT}&"
-        f"outputMint={oracle.USDC_MINT}&"
-        f"amount=1000000&"
-        f"slippageBps=50"
+    assert request.full_url == build_jupiter_quote_url(
+        oracle.JUPITER_SWAP_V1,
+        oracle.SOL_MINT,
+        oracle.USDC_MINT,
+        1_000_000,
+        50,
+        swap_mode="ExactIn",
+        restrict_intermediate_tokens=True,
     )
 
 

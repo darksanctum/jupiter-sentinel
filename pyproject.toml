@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jupiter-sentinel"
+version = "3.0.0"
+description = "Autonomous AI DeFi agent for Jupiter with demo, monitoring, and trading workflows."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Jupiter Sentinel Contributors" }
+]
+keywords = ["jupiter", "solana", "defi", "trading", "arbitrage", "agent"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "aiohttp>=3.9.0",
+  "base58>=2.1.1",
+  "fastapi>=0.111.0",
+  "jinja2>=3.1.0",
+  "numpy>=1.26.0",
+  "pydantic>=2.7.0",
+  "requests>=2.31.0",
+  "rich>=13.0.0",
+  "scipy>=1.12.0",
+  "solana>=0.34.0",
+  "solders>=0.21.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.11.0",
+]
+
+[project.scripts]
+jupiter-sentinel = "jupiter_sentinel_cli:main"
+
+[tool.setuptools]
+include-package-data = false
+py-modules = ["demo", "jupiter_sentinel_cli"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

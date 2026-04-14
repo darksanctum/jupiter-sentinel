@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import src.executor as executor
 from src.executor import TradeExecutor
+from src.validation import build_jupiter_quote_url
 
 VALID_INPUT_MINT = executor.SOL_MINT
 VALID_OUTPUT_MINT = executor.USDC_MINT
@@ -94,14 +95,16 @@ def test_get_quote_builds_request_and_parses_response(monkeypatch):
 
     request, timeout = calls[0]
     assert timeout == 15
-    assert request.full_url == (
-        f"{executor.JUPITER_SWAP_V1}/quote?"
-        f"inputMint={VALID_INPUT_MINT}&"
-        f"outputMint={VALID_OUTPUT_MINT}&"
-        f"amount=42&"
-        f"slippageBps=75&"
-        f"onlyDirectRoutes=false&"
-        f"asLegacyTransaction=false"
+    assert request.full_url == build_jupiter_quote_url(
+        executor.JUPITER_SWAP_V1,
+        VALID_INPUT_MINT,
+        VALID_OUTPUT_MINT,
+        42,
+        75,
+        swap_mode="ExactIn",
+        restrict_intermediate_tokens=True,
+        only_direct_routes=False,
+        as_legacy_transaction=False,
     )
     headers = {key.lower(): value for key, value in request.header_items()}
     assert headers["user-agent"] == executor.HEADERS["User-Agent"]

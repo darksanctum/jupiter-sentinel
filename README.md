@@ -45,6 +45,20 @@ git clone https://github.com/your-repo/jupiter-sentinel.git && cd jupiter-sentin
 
 *Want to see the beautiful web dashboard? Run `python -m src.web_dashboard` and open `http://127.0.0.1:8000`.*
 
+## 🐳 Docker Deployment
+
+Run the autonomous trader in a portable container with persistent state and mounted keys:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+- Bot state persists in `./data`
+- Read-only signing keys mount from `./keys`
+- Health endpoint is exposed at `http://127.0.0.1:8080/healthz`
+- Runtime behavior is configured through `.env` / Compose environment variables
+
 ---
 
 ## 🏆 Why This Wins (The 5 Pillars)

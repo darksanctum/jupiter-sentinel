@@ -32,6 +32,8 @@ class FakeClock:
 def test_token_bucket_enforces_five_requests_per_ten_seconds() -> None:
     clock = FakeClock()
     limiter = JupiterRateLimiter(
+        max_requests=5,
+        window_seconds=10,
         clock=clock.now,
         sleep=clock.sleep,
         quote_batch_window_seconds=0.0,

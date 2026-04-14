@@ -1,0 +1,41 @@
+services:
+  jupiter-sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jupiter-sentinel:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8080:8080"
+    environment:
+      JUPITER_SENTINEL_LIVE: "${JUPITER_SENTINEL_LIVE:-false}"
+      JUPITER_SENTINEL_ENTRY_AMOUNT_SOL: "${JUPITER_SENTINEL_ENTRY_AMOUNT_SOL:-0.25}"
+      JUPITER_SENTINEL_ENTER_ON: "${JUPITER_SENTINEL_ENTER_ON:-down}"
+      JUPITER_SENTINEL_MAX_OPEN_POSITIONS: "${JUPITER_SENTINEL_MAX_OPEN_POSITIONS:-3}"
+      JUPITER_SENTINEL_INTERVAL_SECS: "${JUPITER_SENTINEL_INTERVAL_SECS:-60}"
+      JUPITER_SENTINEL_STATE_FILE: "/app/data/state.json"
+      JUPITER_SENTINEL_RUNTIME_DIR: "/app/data/runtime"
+      JUPITER_SENTINEL_HEALTHCHECK_ENABLED: "true"
+      JUPITER_SENTINEL_HEALTH_HOST: "0.0.0.0"
+      JUPITER_SENTINEL_HEALTH_PORT: "8080"
+      JUPITER_SENTINEL_HEALTH_STALE_AFTER_SECS: "${JUPITER_SENTINEL_HEALTH_STALE_AFTER_SECS:-300}"
+      JUP_API_KEY: "${JUP_API_KEY:-}"
+      SOLANA_PUBLIC_KEY: "${SOLANA_PUBLIC_KEY:-}"
+      SOLANA_PRIVATE_KEY_PATH: "${SOLANA_PRIVATE_KEY_PATH:-/app/keys/solana-keypair.json}"
+    volumes:
+      - ./data:/app/data
+      - ./keys:/app/keys:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    command: ["jupiter-sentinel", "start", "--foreground"]
