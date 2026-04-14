@@ -1,0 +1,124 @@
+{
+  "config": {
+    "amount": 1000000,
+    "base_url": "https://api.jup.ag/swap/v1",
+    "input_mint": "So11111111111111111111111111111111111111112",
+    "latency_samples": 6,
+    "monitor_intervals_seconds": [
+      5,
+      10,
+      30,
+      60,
+      300
+    ],
+    "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "published_limit_rpm": 30,
+    "rate_limit_probe_concurrency": 4,
+    "rate_limit_probe_max_requests": 8,
+    "reserve_execution_rpm": 6,
+    "reserve_metadata_rpm": 4,
+    "reserve_monitoring_rpm": 12,
+    "safety_utilization": 0.85,
+    "slippage_bps": 50,
+    "throughput_concurrency": 2,
+    "throughput_duration_seconds": 3.0,
+    "throughput_target_rps": 0.5,
+    "timeout_seconds": 10.0
+  },
+  "connectivity_status": "attempted_without_success",
+  "generated_at": "2026-04-14T00:16:55+00:00",
+  "headers_used": {
+    "Content-Type": "application/json",
+    "User-Agent": "JupiterSentinel/1.0"
+  },
+  "monitoring_capacity": {
+    "basis": "published_bucket_fallback",
+    "observed_sustained_rpm": null,
+    "reserved_requests_per_minute": 22,
+    "safe_budget_rpm": 25,
+    "scan_budget_rpm": 3,
+    "sustainable_budget_rpm": 30,
+    "token_capacity_by_interval": {
+      "5": 0,
+      "10": 0,
+      "30": 1,
+      "60": 3,
+      "300": 15
+    }
+  },
+  "phases": {
+    "latency": {
+      "achieved_throughput_qps": 0.0,
+      "avg_attempt_time_ms": 1.0473888250999153,
+      "avg_jupiter_time_taken": null,
+      "avg_response_time_ms": null,
+      "completed": 6,
+      "duration_seconds": 0.006334291014354676,
+      "failures": 6,
+      "first_rate_limited_after_seconds": null,
+      "first_rate_limited_at_request": null,
+      "max_response_time_ms": null,
+      "max_retry_after_seconds": null,
+      "min_response_time_ms": null,
+      "name": "latency",
+      "p50_response_time_ms": null,
+      "p95_response_time_ms": null,
+      "p99_response_time_ms": null,
+      "rate_limited": 0,
+      "requested": 6,
+      "sample_errors": [
+        "ConnectError: [Errno 8] nodename nor servname provided, or not known"
+      ],
+      "successes": 0
+    },
+    "rate_limit_probe": {
+      "achieved_throughput_qps": 0.0,
+      "avg_attempt_time_ms": 1.886869747977471,
+      "avg_jupiter_time_taken": null,
+      "avg_response_time_ms": null,
+      "completed": 8,
+      "duration_seconds": 0.00470774999121204,
+      "failures": 8,
+      "first_rate_limited_after_seconds": null,
+      "first_rate_limited_at_request": null,
+      "max_response_time_ms": null,
+      "max_retry_after_seconds": null,
+      "min_response_time_ms": null,
+      "name": "rate_limit_probe",
+      "p50_response_time_ms": null,
+      "p95_response_time_ms": null,
+      "p99_response_time_ms": null,
+      "rate_limited": 0,
+      "requested": 8,
+      "sample_errors": [
+        "ConnectError: [Errno 8] nodename nor servname provided, or not known"
+      ],
+      "successes": 0
+    },
+    "throughput": {
+      "achieved_throughput_qps": 0.0,
+      "avg_attempt_time_ms": 1.2867089826613665,
+      "avg_jupiter_time_taken": null,
+      "avg_response_time_ms": null,
+      "completed": 2,
+      "duration_seconds": 2.003464334004093,
+      "failures": 2,
+      "first_rate_limited_after_seconds": null,
+      "first_rate_limited_at_request": null,
+      "max_response_time_ms": null,
+      "max_retry_after_seconds": null,
+      "min_response_time_ms": null,
+      "name": "throughput",
+      "p50_response_time_ms": null,
+      "p95_response_time_ms": null,
+      "p99_response_time_ms": null,
+      "rate_limited": 0,
+      "requested": 2,
+      "sample_errors": [
+        "ConnectError: [Errno 8] nodename nor servname provided, or not known"
+      ],
+      "successes": 0
+    }
+  },
+  "quote_url": "https://api.jup.ag/swap/v1/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=1000000&slippageBps=50&swapMode=ExactIn&restrictIntermediateTokens=true"
+}
