@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jupiter Sentinel — Real-Time Solana Market Intelligence</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#e0e0e0;font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;background:radial-gradient(ellipse at 50% 0%,#1a0a2e 0%,#0a0a0f 70%)}
+.hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:800;margin-bottom:0.5rem;background:linear-gradient(135deg,#a78bfa,#7c3aed,#5b21b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .tagline{font-size:clamp(1rem,2.5vw,1.4rem);color:#9ca3af;max-width:600px;margin-bottom:2rem}
+.badges{display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;margin-bottom:2rem}
+.badge{padding:0.4rem 1rem;border-radius:9999px;font-size:0.8rem;border:1px solid #7c3aed40;color:#a78bfa;background:#7c3aed10}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1.5rem;max-width:800px;width:100%;margin:2rem auto;padding:0 1rem}
+.stat{text-align:center;padding:1.5rem;background:#111118;border:1px solid #1e1e2e;border-radius:12px}
+.stat .num{font-size:2rem;font-weight:700;color:#a78bfa}
+.stat .label{font-size:0.85rem;color:#6b7280;margin-top:0.25rem}
+.features{max-width:1000px;margin:0 auto;padding:4rem 1.5rem}
+.features h2{text-align:center;font-size:2rem;margin-bottom:3rem;color:#e0e0e0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem}
+.card{padding:1.5rem;background:#111118;border:1px solid #1e1e2e;border-radius:12px;transition:border-color 0.2s}
+.card:hover{border-color:#7c3aed60}
+.card h3{color:#a78bfa;margin-bottom:0.5rem;font-size:1.1rem}
+.card p{color:#9ca3af;font-size:0.9rem}
+.arch{max-width:900px;margin:0 auto;padding:2rem 1.5rem 4rem}
+.arch h2{text-align:center;font-size:2rem;margin-bottom:2rem}
+.arch pre{background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:1.5rem;overflow-x:auto;font-size:0.8rem;color:#9ca3af;line-height:1.5}
+footer{text-align:center;padding:3rem 1rem;color:#4b5563;font-size:0.85rem;border-top:1px solid #1e1e2e}
+a{color:#a78bfa;text-decoration:none}a:hover{text-decoration:underline}
+.cta{display:inline-block;padding:0.8rem 2rem;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border-radius:8px;font-weight:600;margin-top:1rem;text-decoration:none;transition:transform 0.2s}
+.cta:hover{transform:translateY(-2px);text-decoration:none}
+</style>
+</head>
+<body>
+<section class="hero">
+<h1>Jupiter Sentinel</h1>
+<p class="tagline">Real-time Solana market intelligence. Scan, analyze, and act on DeFi opportunities with deterministic precision.</p>
+<div class="badges">
+<span class="badge">Solana Native</span>
+<span class="badge">Jupiter Powered</span>
+<span class="badge">Zero-LLM</span>
+<span class="badge">48 Modules</span>
+<span class="badge">12K+ LOC</span>
+</div>
+<a class="cta" href="https://github.com/darksanctum/jupiter-sentinel">View on GitHub</a>
+<div class="stats">
+<div class="stat"><div class="num">63</div><div class="label">Commits</div></div>
+<div class="stat"><div class="num">48</div><div class="label">Python Modules</div></div>
+<div class="stat"><div class="num">23</div><div class="label">Tests</div></div>
+<div class="stat"><div class="num">100%</div><div class="label">Deterministic</div></div>
+</div>
+</section>
+<section class="features">
+<h2>Core Capabilities</h2>
+<div class="grid">
+<div class="card"><h3>Real-Time Token Scanning</h3><p>Monitors DexScreener for new Solana pairs. Evaluates liquidity, volume, holder distribution, and contract safety in seconds.</p></div>
+<div class="card"><h3>Jupiter Swap Integration</h3><p>Native integration with Jupiter V6 swap API for optimal route execution. Supports SOL and SPL token swaps with slippage protection.</p></div>
+<div class="card"><h3>Signal Classification</h3><p>Deterministic scoring engine classifies tokens as STRONG_BUY, BUY, WATCH, or REJECT based on 15+ on-chain and market metrics.</p></div>
+<div class="card"><h3>Risk Assessment</h3><p>Automated rug-pull detection: mint authority check, freeze authority check, LP burn verification, and top-holder concentration analysis.</p></div>
+<div class="card"><h3>Telegram Signal Bot</h3><p>Freemium bot delivers real-time alerts. 1 free scan/day, premium for unlimited. Atomic user data, sanitized outputs, rate-limited.</p></div>
+<div class="card"><h3>ML-Ready Pipeline</h3><p>Feature engineering pipeline and oracle benchmarking framework ready for prediction model integration.</p></div>
+</div>
+</section>
+<section class="arch">
+<h2>Architecture</h2>
+<pre>
+jupiter-sentinel/
+├── core/           # Scanner, analyzer, classifier engine
+├── strategies/     # Trading strategy implementations
+├── risk/           # Rug-pull detection, risk scoring
+├── data/           # Market data providers (DexScreener, Jupiter)
+├── ml/             # Feature engineering, oracle benchmarks
+├── bot/            # Telegram signal bot
+├── utils/          # Config, logging, JSON safety, validation
+├── tests/          # 23 tests across all modules
+└── docs/           # Full documentation suite
+</pre>
+</section>
+<footer>
+<p>Jupiter Sentinel — Built by <a href="https://github.com/darksanctum">darksanctum</a></p>
+<p>Powered by Solana + Jupiter. Not financial advice. DYOR.</p>
+</footer>
+</body>
+</html>
