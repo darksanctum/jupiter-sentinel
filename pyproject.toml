@@ -43,7 +43,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "mypy>=1.11.0",
   "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
   "ruff>=0.11.0",
 ]
 
@@ -60,3 +62,20 @@ include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = [".jupiter-sentinel"]
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+  "demo.py",
+  "jupiter_sentinel_cli.py",
+  "src/analytics.py",
+  "src/cross_chain_arbitrage.py",
+  "src/service_health.py",
+  "src/validation.py",
+]
+ignore_missing_imports = true
+warn_unused_configs = true

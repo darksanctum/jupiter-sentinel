@@ -18,10 +18,10 @@
 
 **An autonomous AI DeFi agent combining Jupiter APIs, ML ensembles, and cross-chain execution to extract asymmetric market advantages.**
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=flat-square)](#)
+[![CI](https://github.com/darksanctum/jupiter-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/darksanctum/jupiter-sentinel/actions/workflows/ci.yml)
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](#)
+[![Lint: Ruff](https://img.shields.io/badge/lint-ruff-46a36f.svg?style=flat-square)](https://github.com/astral-sh/ruff)
 [![Jupiter API](https://img.shields.io/badge/Jupiter-API_V6-purple.svg?style=flat-square)](https://station.jup.ag/docs)
 [![Solana](https://img.shields.io/badge/Solana-Mainnet-green.svg?style=flat-square)](https://solana.com/)
 [![AI Agent](https://img.shields.io/badge/AI-Autonomous-orange.svg?style=flat-square)](#)
