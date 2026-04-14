@@ -9,6 +9,7 @@ import argparse
 import signal
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
@@ -21,6 +22,8 @@ from .config import (
     SCAN_PAIRS,
     SOL_MINT,
     USDC_MINT,
+    VOLATILE_MARKET_STOP_LOSS_PCT,
+    VOLATILE_MARKET_TAKE_PROFIT_PCT,
 )
 from .correlation_tracker import CorrelationTracker
 from .executor import TradeExecutor
@@ -33,6 +36,18 @@ from .security import display_wallet_status, sanitize_sensitive_text
 from .state_manager import StateManager
 
 SUCCESS_STATUSES = {"success", "dry_run"}
+
+
+@dataclass(frozen=True)
+class EntryContext:
+    pair: str
+    scan_input_mint: str
+    scan_output_mint: str
+    held_mint: str
+    shared_feed: PriceFeed
+    regime: MarketRegime
+    stop_loss_pct: Optional[float]
+    take_profit_pct: Optional[float]
 
 
 class AutoTrader:
@@ -111,17 +126,38 @@ class AutoTrader:
 
     def run(self, max_iterations: Optional[int] = None) -> None:
         """Start the continuous trading loop."""
+        self._reset_runtime_state()
+        iteration = 0
+        self.state_manager.start_autosave(
+            lambda: self.state_manager.save_trader_state(self)
+        )
+        self._log_startup_state()
+
+        try:
+            while self.running:
+                if self._should_stop_for_iteration(iteration, max_iterations):
+                    break
+                self._run_cycle()
+                iteration += 1
+                if self._should_stop_for_iteration(iteration, max_iterations):
+                    break
+                self.sleep_fn(self.scan_interval_secs)
+        except KeyboardInterrupt:
+            self._log("Keyboard interrupt received")
+        finally:
+            self.stop()
+
+    def _reset_runtime_state(self) -> None:
+        """Reset transient runtime health fields before starting the loop."""
         self.running = True
         self.started_at = time.time()
         self.last_cycle_started_at = None
         self.last_successful_cycle_at = None
         self.last_error = None
         self.last_error_at = None
-        iteration = 0
-        self.state_manager.start_autosave(
-            lambda: self.state_manager.save_trader_state(self)
-        )
 
+    def _log_startup_state(self) -> None:
+        """Emit startup configuration and recovered runtime state."""
         self._log("AUTO TRADER START")
         self._log(f"Mode: {'DRY RUN' if self.dry_run else 'LIVE'}")
         self._log(f"State file: {self.state_path}")
@@ -140,41 +176,36 @@ class AutoTrader:
                 f"Recovered {len(self.risk_manager.positions)} open position(s) from state"
             )
 
+    @staticmethod
+    def _should_stop_for_iteration(
+        iteration: int, max_iterations: Optional[int]
+    ) -> bool:
+        """Return True when the caller reached the optional iteration cap."""
+        return max_iterations is not None and iteration >= max_iterations
+
+    def _run_cycle(self) -> None:
+        """Execute one trading cycle and capture runtime health state."""
+        self.cycle += 1
+        self.last_cycle_started_at = time.time()
+        self._log(f"Cycle {self.cycle}")
+
         try:
-            while self.running:
-                if max_iterations is not None and iteration >= max_iterations:
-                    break
-
-                self.cycle += 1
-                self.last_cycle_started_at = time.time()
-                self._log(f"Cycle {self.cycle}")
-
-                try:
-                    self.monitor_positions()
-                    alerts = self.scanner.scan_once()
-                    self.correlation_tracker.refresh_if_due(self._feed_by_pair)
-                    for alert in alerts:
-                        self._handle_alert(alert)
-                    self.save_state()
-                    self.last_successful_cycle_at = time.time()
-                    self.last_error = None
-                    self.last_error_at = None
-                except KeyboardInterrupt:
-                    raise
-                except Exception as exc:
-                    self.last_error = str(exc)
-                    self.last_error_at = time.time()
-                    self._log(f"Cycle error: {exc}")
-                    self.save_state()
-
-                iteration += 1
-                if max_iterations is not None and iteration >= max_iterations:
-                    break
-                self.sleep_fn(self.scan_interval_secs)
+            self.monitor_positions()
+            alerts = self.scanner.scan_once()
+            self.correlation_tracker.refresh_if_due(self._feed_by_pair)
+            for alert in alerts:
+                self._handle_alert(alert)
+            self.save_state()
+            self.last_successful_cycle_at = time.time()
+            self.last_error = None
+            self.last_error_at = None
         except KeyboardInterrupt:
-            self._log("Keyboard interrupt received")
-        finally:
-            self.stop()
+            raise
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.last_error_at = time.time()
+            self._log(f"Cycle error: {exc}")
+            self.save_state()
 
     def stop(self) -> None:
         """Stop the loop and persist the latest state."""
@@ -211,40 +242,81 @@ class AutoTrader:
             f"Alert {pair} {direction} {change_pct:+.2f}% @ ${float(alert.get('price', 0.0) or 0.0):.6f}"
         )
 
-        if pair in self.position_meta or any(
-            position.pair == pair and position.status == "open"
-            for position in self.risk_manager.positions
-        ):
+        if self._has_open_position(pair):
             self._log(f"Skipping {pair}: position already open")
             return
 
-        open_positions = [
+        open_positions = self._open_positions()
+        if self._max_open_positions_reached(open_positions):
+            self._log(f"Skipping {pair}: max open positions reached")
+            return
+
+        if not self._should_enter_for_direction(direction):
+            return
+
+        context = self._resolve_entry_context(pair, open_positions)
+        if context is None:
+            return
+
+        position = self._open_entry_position(context)
+        if position is None:
+            self._log(f"Risk manager rejected {pair}")
+            return
+        if float(getattr(position, "notional", 0.0) or 0.0) > MAX_POSITION_USD + 1e-9:
+            self._rollback_open_position(pair, position)
+            self._log(
+                f"Blocking {pair}: hard position limit exceeded "
+                f"(${float(position.notional):.2f} > ${MAX_POSITION_USD:.2f})"
+            )
+            return
+
+        self.risk_manager.price_feeds[pair] = context.shared_feed
+        self._complete_entry(alert, context, position)
+
+    def _open_positions(self) -> list[Position]:
+        """Return the current open positions tracked by the risk manager."""
+        return [
             position
             for position in self.risk_manager.positions
             if position.status == "open"
         ]
-        if (
+
+    def _has_open_position(self, pair: str) -> bool:
+        """Check whether the pair already has an open or pending local position."""
+        return pair in self.position_meta or any(
+            position.pair == pair and position.status == "open"
+            for position in self.risk_manager.positions
+        )
+
+    def _max_open_positions_reached(self, open_positions: list[Position]) -> bool:
+        """Check whether the configured open-position cap was hit."""
+        return (
             self.max_open_positions is not None
             and len(open_positions) >= self.max_open_positions
-        ):
-            self._log(f"Skipping {pair}: max open positions reached")
-            return
+        )
 
-        if self.enter_on == "down" and direction != "DOWN":
-            return
-        if self.enter_on == "up" and direction != "UP":
-            return
+    def _should_enter_for_direction(self, direction: str) -> bool:
+        """Validate whether the current alert direction matches the strategy mode."""
+        if self.enter_on == "down":
+            return direction == "DOWN"
+        if self.enter_on == "up":
+            return direction == "UP"
+        return True
 
+    def _resolve_entry_context(
+        self, pair: str, open_positions: list[Position]
+    ) -> Optional[EntryContext]:
+        """Resolve all state needed to attempt a new position entry."""
         pair_config = self._resolve_pair(pair)
         if pair_config is None:
             self._log(f"Skipping {pair}: pair is not configured")
-            return
+            return None
 
         scan_input_mint, scan_output_mint = pair_config
         held_mint = self._derive_held_mint(scan_input_mint, scan_output_mint)
         if held_mint is None:
             self._log(f"Skipping {pair}: no non-SOL asset to trade for this pair")
-            return
+            return None
 
         self.correlation_tracker.refresh_if_due(self._feed_by_pair)
         conflict = self.correlation_tracker.find_correlated_open_position(
@@ -261,48 +333,63 @@ class AutoTrader:
                 f"with open {conflict['open_pair']} exceeds "
                 f"{self.correlation_tracker.threshold:.2f}"
             )
-            return
+            return None
 
         shared_feed = self._ensure_scanner_feed(pair, scan_input_mint, scan_output_mint)
         regime = self.regime_detector.detect(shared_feed)
-
         if regime == MarketRegime.BEAR:
             self._log(f"Skipping {pair}: market regime is BEAR (no longs)")
-            return
+            return None
 
-        stop_loss_pct = None
-        take_profit_pct = None
-        if regime == MarketRegime.VOLATILE:
-            self._log(f"Market is VOLATILE for {pair}, using wider stops")
-            stop_loss_pct = 0.15
-            take_profit_pct = 0.30
-
-        position = self.risk_manager.open_position(
+        stop_loss_pct, take_profit_pct = self._risk_parameters_for_regime(pair, regime)
+        return EntryContext(
             pair=pair,
-            input_mint=scan_input_mint,
-            output_mint=scan_output_mint,
-            amount_sol=self.entry_amount_sol,
+            scan_input_mint=scan_input_mint,
+            scan_output_mint=scan_output_mint,
+            held_mint=held_mint,
+            shared_feed=shared_feed,
+            regime=regime,
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
+        )
+
+    def _risk_parameters_for_regime(
+        self, pair: str, regime: MarketRegime
+    ) -> tuple[Optional[float], Optional[float]]:
+        """Return regime-specific risk overrides for a candidate entry."""
+        if regime != MarketRegime.VOLATILE:
+            return None, None
+
+        self._log(f"Market is VOLATILE for {pair}, using wider stops")
+        return (
+            VOLATILE_MARKET_STOP_LOSS_PCT,
+            VOLATILE_MARKET_TAKE_PROFIT_PCT,
+        )
+
+    def _open_entry_position(self, context: EntryContext) -> Optional[Position]:
+        """Ask the risk manager to size and validate a new position."""
+        return self.risk_manager.open_position(
+            pair=context.pair,
+            input_mint=context.scan_input_mint,
+            output_mint=context.scan_output_mint,
+            amount_sol=self.entry_amount_sol,
+            stop_loss_pct=context.stop_loss_pct,
+            take_profit_pct=context.take_profit_pct,
             dry_run=True,
         )
-        if position is None:
-            self._log(f"Risk manager rejected {pair}")
-            return
-        if float(getattr(position, "notional", 0.0) or 0.0) > MAX_POSITION_USD + 1e-9:
-            self._rollback_open_position(pair, position)
-            self._log(
-                f"Blocking {pair}: hard position limit exceeded "
-                f"(${float(position.notional):.2f} > ${MAX_POSITION_USD:.2f})"
-            )
-            return
 
-        self.risk_manager.price_feeds[pair] = shared_feed
-
+    def _complete_entry(
+        self,
+        alert: dict[str, Any],
+        context: EntryContext,
+        position: Position,
+    ) -> None:
+        """Execute the entry swap and persist local metadata on success."""
+        pair = context.pair
         entry_amount_lamports = int(position.amount_sol * 1e9)
         entry_result = self.executor.execute_swap(
             input_mint=SOL_MINT,
-            output_mint=held_mint,
+            output_mint=context.held_mint,
             amount=entry_amount_lamports,
             dry_run=self.dry_run,
         )
@@ -323,16 +410,15 @@ class AutoTrader:
         position.tx_buy = entry_result.get("tx_signature")
         position.notional = float(entry_result.get("out_usd", 0.0) or 0.0)
         self.position_meta[pair] = {
-            "held_mint": held_mint,
-            "scan_input_mint": scan_input_mint,
-            "scan_output_mint": scan_output_mint,
+            "held_mint": context.held_mint,
+            "scan_input_mint": context.scan_input_mint,
+            "scan_output_mint": context.scan_output_mint,
             "entry_amount_units": entry_amount_units,
             "entry_amount_lamports": entry_amount_lamports,
             "entry_alert": dict(alert),
             "entry_result": dict(entry_result),
             "opened_at": datetime.utcnow().isoformat(),
         }
-
         self._log(
             f"Opened {pair} | {position.amount_sol:.6f} SOL -> {entry_amount_units} units "
             f"[{entry_result.get('status')}]"
@@ -519,35 +605,8 @@ class AutoTrader:
     ) -> tuple[int, dict[str, Any]]:
         """Return an HTTP status code and JSON payload for runtime health checks."""
         now = time.time()
-        open_positions = [
-            position
-            for position in self.risk_manager.positions
-            if position.status == "open"
-        ]
-
-        status = "ok"
-        http_status = 200
-        if not self.running:
-            status = "stopped"
-            http_status = 503
-        elif self.last_successful_cycle_at is None:
-            if self.last_error is not None:
-                status = "error"
-                http_status = 503
-            elif (
-                self.last_cycle_started_at is not None
-                and stale_after_secs > 0
-                and now - self.last_cycle_started_at > stale_after_secs
-            ):
-                status = "stalled"
-                http_status = 503
-            else:
-                status = "starting"
-        elif stale_after_secs > 0 and now - self.last_successful_cycle_at > stale_after_secs:
-            status = "stale"
-            http_status = 503
-        elif self.last_error is not None:
-            status = "degraded"
+        open_positions = self._open_positions()
+        status, http_status = self._determine_health_status(now, stale_after_secs)
 
         payload = {
             "service": "jupiter-sentinel",
@@ -572,6 +631,33 @@ class AutoTrader:
             "closed_positions": len(self.risk_manager.closed_positions),
         }
         return http_status, payload
+
+    def _determine_health_status(
+        self, now: float, stale_after_secs: float
+    ) -> tuple[str, int]:
+        """Resolve the current health label and HTTP status code."""
+        if not self.running:
+            return "stopped", 503
+
+        if self.last_successful_cycle_at is None:
+            if self.last_error is not None:
+                return "error", 503
+            if (
+                self.last_cycle_started_at is not None
+                and stale_after_secs > 0
+                and now - self.last_cycle_started_at > stale_after_secs
+            ):
+                return "stalled", 503
+            return "starting", 200
+
+        if (
+            stale_after_secs > 0
+            and now - self.last_successful_cycle_at > stale_after_secs
+        ):
+            return "stale", 503
+        if self.last_error is not None:
+            return "degraded", 200
+        return "ok", 200
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

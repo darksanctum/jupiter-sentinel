@@ -12,6 +12,10 @@ from src import autotrader
 from src import profit_locker
 from src import strategies
 from src import token_discovery
+from src.config import (
+    DEFAULT_LIVE_TRADER_INTERVAL_SECS,
+    DEFAULT_LIVE_TRADER_PAIR_LIMIT,
+)
 from src.jupiter_limits import build_free_tier_bot_config
 from src.oracle import PriceFeed
 from src.security import sanitize_sensitive_text
@@ -25,8 +29,8 @@ logging.basicConfig(
 logger = logging.getLogger("LiveTrader")
 
 
-def main() -> Any:
-    """Function docstring."""
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser for the live trader loop."""
     parser = argparse.ArgumentParser(description="Live Trader for Jupiter Sentinel")
     parser.add_argument(
         "--live", action="store_true", help="Run in live mode (disables dry-run)"
@@ -34,8 +38,11 @@ def main() -> Any:
     parser.add_argument(
         "--interval",
         type=int,
-        default=300,
-        help="Scan interval in seconds (default: 300 / 5 min)",
+        default=DEFAULT_LIVE_TRADER_INTERVAL_SECS,
+        help=(
+            "Scan interval in seconds "
+            f"(default: {DEFAULT_LIVE_TRADER_INTERVAL_SECS} / 5 min)"
+        ),
     )
     parser.add_argument(
         "--iterations",
@@ -43,16 +50,119 @@ def main() -> Any:
         default=None,
         help="Number of loop iterations (default: infinite)",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def _sync_discovered_feeds(
+    pairs: list[tuple[str, str, str]],
+    active_feeds: dict[str, PriceFeed],
+    trader: autotrader.AutoTrader,
+) -> list[PriceFeed]:
+    """Create and register feeds for the currently discovered token pairs."""
+    current_feeds: list[PriceFeed] = []
+    for input_mint, output_mint, pair_name in pairs:
+        feed = active_feeds.get(pair_name)
+        if feed is None:
+            feed = PriceFeed(
+                pair_name=pair_name,
+                input_mint=input_mint,
+                output_mint=output_mint,
+            )
+            active_feeds[pair_name] = feed
+        if pair_name not in trader._feed_by_pair:
+            trader.scanner.feeds.append(feed)
+            trader._feed_by_pair[pair_name] = feed
+        current_feeds.append(feed)
+    return current_feeds
+
+
+def _refresh_feed_prices(current_feeds: list[PriceFeed]) -> None:
+    """Fetch fresh prices for every discovered feed before running strategies."""
+    logger.info("Fetching latest prices for discovered feeds...")
+    for feed in current_feeds:
+        feed.fetch_price()
+
+
+def _build_strategy_alerts(current_feeds: list[PriceFeed]) -> list[dict[str, Any]]:
+    """Run strategy modules and normalize their outputs into AutoTrader alerts."""
+    mr_signals = strategies.scan_for_signals(current_feeds)
+    mo_signals = strategies.scan_momentum_signals(current_feeds)
+    all_signals = mr_signals + mo_signals
+    logger.info("Generated %s strategy signals.", len(all_signals))
+
+    alerts: list[dict[str, Any]] = []
+    for signal_data in all_signals:
+        alerts.append(
+            {
+                "pair": signal_data["pair"],
+                "direction": signal_data["direction"],
+                "change_pct": signal_data.get(
+                    "deviation_pct", signal_data.get("cumulative_change_pct", 1.0)
+                ),
+                "price": signal_data["price"],
+                "strategy": signal_data["strategy"],
+            }
+        )
+    return alerts
+
+
+def _log_profit_status(trader: autotrader.AutoTrader) -> None:
+    """Log locked and tradable balances after each strategy cycle."""
+    locked_balance = profit_locker.get_locked_balance()
+    tradable_balance = profit_locker.get_tradable_balance(executor=trader.executor)
+    logger.info(
+        "Total locked profit: %.6f SOL. Tradable balance: %.6f SOL.",
+        locked_balance,
+        tradable_balance,
+    )
+
+
+def _run_cycle(
+    discovery: token_discovery.TokenDiscovery,
+    trader: autotrader.AutoTrader,
+    active_feeds: dict[str, PriceFeed],
+    effective_pair_limit: int,
+) -> None:
+    """Execute one discovery, strategy, and execution cycle."""
+    logger.info("1) Discovering trending tokens...")
+    pairs = discovery.build_scan_pairs(limit=effective_pair_limit)
+    logger.info("Discovered %s trending pairs.", len(pairs))
+
+    current_feeds = _sync_discovered_feeds(pairs, active_feeds, trader)
+    _refresh_feed_prices(current_feeds)
+
+    logger.info("2) Running strategies on discovered tokens...")
+    alerts = _build_strategy_alerts(current_feeds)
+
+    logger.info("3) Executing trades via autotrader...")
+    for alert in alerts:
+        trader._handle_alert(alert)
+
+    logger.info("4) Managing open positions & locking profits...")
+    closed_actions = trader.monitor_positions()
+    if closed_actions:
+        logger.info("Closed %s positions.", len(closed_actions))
+
+    _log_profit_status(trader)
+
+    open_positions = [p for p in trader.risk_manager.positions if p.status == "open"]
+    logger.info("5) Cycle complete. Currently open positions: %s", len(open_positions))
+
+
+def main() -> Any:
+    """Function docstring."""
+    args = build_arg_parser().parse_args()
 
     dry_run = not args.live
     runtime_limits = build_free_tier_bot_config(
-        requested_scan_pairs=20,
+        requested_scan_pairs=DEFAULT_LIVE_TRADER_PAIR_LIMIT,
         requested_scan_interval_seconds=args.interval,
         quote_requests_per_pair=1,
     )
     effective_interval = runtime_limits.effective_scan_interval_seconds
-    effective_pair_limit = runtime_limits.max_pairs_per_scan or 20
+    effective_pair_limit = (
+        runtime_limits.max_pairs_per_scan or DEFAULT_LIVE_TRADER_PAIR_LIMIT
+    )
 
     logger.info("Initializing Live Trader...")
     logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
@@ -85,79 +195,7 @@ def main() -> Any:
 
             logger.info(f"--- Cycle {iteration + 1} ---")
             try:
-                # Step 1: Discover trending tokens
-                logger.info("1) Discovering trending tokens...")
-                pairs = discovery.build_scan_pairs(limit=effective_pair_limit)
-                logger.info(f"Discovered {len(pairs)} trending pairs.")
-
-                # Keep active feeds updated and track current ones
-                current_feeds = []
-                for input_mint, output_mint, pair_name in pairs:
-                    if pair_name not in active_feeds:
-                        feed = PriceFeed(
-                            pair_name=pair_name,
-                            input_mint=input_mint,
-                            output_mint=output_mint,
-                        )
-                        active_feeds[pair_name] = feed
-                        # Trader scanner also needs the feed for executing trades properly
-                        if pair_name not in trader._feed_by_pair:
-                            trader.scanner.feeds.append(feed)
-                            trader._feed_by_pair[pair_name] = feed
-                    current_feeds.append(active_feeds[pair_name])
-
-                # Update history on currently discovered feeds
-                logger.info("Fetching latest prices for discovered feeds...")
-                for feed in current_feeds:
-                    feed.fetch_price()
-
-                # Step 2: Run strategies on discovered tokens
-                logger.info("2) Running strategies on discovered tokens...")
-
-                # Execute both mean reversion and momentum strategies
-                mr_signals = strategies.scan_for_signals(current_feeds)
-                mo_signals = strategies.scan_momentum_signals(current_feeds)
-                all_signals = mr_signals + mo_signals
-
-                logger.info(f"Generated {len(all_signals)} strategy signals.")
-
-                # Step 3: Execute trades via autotrader
-                logger.info("3) Executing trades via autotrader...")
-                for sig in all_signals:
-                    alert = {
-                        "pair": sig["pair"],
-                        "direction": sig["direction"],
-                        "change_pct": sig.get(
-                            "deviation_pct", sig.get("cumulative_change_pct", 1.0)
-                        ),
-                        "price": sig["price"],
-                        "strategy": sig["strategy"],
-                    }
-                    # AutoTrader will evaluate and open position if eligible
-                    trader._handle_alert(alert)
-
-                # Step 4: Lock profits after each close
-                logger.info("4) Managing open positions & locking profits...")
-                # monitor_positions checks exits, triggers close_position, which natively uses StateManager to lock_profit.
-                closed_actions = trader.monitor_positions()
-                if closed_actions:
-                    logger.info(f"Closed {len(closed_actions)} positions.")
-
-                # Log the current locked profit directly from the profit_locker module
-                locked_balance = profit_locker.get_locked_balance()
-                tradable_balance = profit_locker.get_tradable_balance(
-                    executor=trader.executor
-                )
-                logger.info(
-                    f"Total locked profit: {locked_balance:.6f} SOL. Tradable balance: {tradable_balance:.6f} SOL."
-                )
-
-                # Step 5: Log everything
-                logger.info("5) Cycle complete. Logging status...")
-                open_positions = [
-                    p for p in trader.risk_manager.positions if p.status == "open"
-                ]
-                logger.info(f"Currently open positions: {len(open_positions)}")
+                _run_cycle(discovery, trader, active_feeds, effective_pair_limit)
             except Exception as exc:
                 logger.error(
                     "Cycle failed; state preserved and loop will continue. %s",

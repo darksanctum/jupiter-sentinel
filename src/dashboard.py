@@ -3,58 +3,134 @@ Jupiter Sentinel - Terminal Dashboard
 Beautiful real-time dashboard using Rich library.
 """
 
-import logging
-import time
-import random
-import urllib.request
 import collections
+import json
+import logging
+import random
+import time
+import urllib.request
 from datetime import datetime
 from typing import Any, Optional, Sequence
 
 try:
     from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
     from rich.layout import Layout
     from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
     from rich.text import Text
-    from rich.columns import Columns
-    from rich.align import Align
 
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
 
 from .config import (
-    JUPITER_SWAP_V1,
     HEADERS,
+    JUPITER_SWAP_V1,
     RPC_URL,
     SOL_MINT,
     USDC_MINT,
-    SCAN_PAIRS,
-    load_keypair,
 )
 from .resilience import request_json
 from .validation import build_jupiter_quote_url
-from .ml.signal_ensemble import SignalEnsemble, SignalDirection
 from .ml.model_monitor import ModelMonitor
+from .ml.signal_ensemble import SignalDirection, SignalEnsemble
+
+logger = logging.getLogger(__name__)
+
+DASHBOARD_PRICE_TIMEOUT_SECONDS = 5
+DASHBOARD_INITIAL_SOL_PRICE = 140.0
+DASHBOARD_INITIAL_PORTFOLIO_VALUE = 10_000.0
+DASHBOARD_HISTORY_LENGTH = 80
+DASHBOARD_PRICE_JITTER = (-0.1, 0.1)
+DASHBOARD_PORTFOLIO_JITTER = (-10.0, 15.0)
+DASHBOARD_SEED_JITTER = (-40.0, 45.0)
+DASHBOARD_REFRESH_INTERVAL_SECONDS = 1.0
+TRADE_HISTORY = (
+    {
+        "time": "10:01:23",
+        "pair": "SOL/USDC",
+        "type": "BUY",
+        "amount": "10.5 SOL",
+        "price": "$145.20",
+        "status": "Success",
+    },
+    {
+        "time": "09:45:11",
+        "pair": "JUP/USDC",
+        "type": "SELL",
+        "amount": "1000 JUP",
+        "price": "$1.20",
+        "status": "Success",
+    },
+    {
+        "time": "09:30:00",
+        "pair": "SOL/USDC",
+        "type": "BUY",
+        "amount": "5.0 SOL",
+        "price": "$144.80",
+        "status": "Success",
+    },
+    {
+        "time": "09:15:22",
+        "pair": "BONK/SOL",
+        "type": "BUY",
+        "amount": "1M BONK",
+        "price": "$0.000015",
+        "status": "Success",
+    },
+    {
+        "time": "08:50:05",
+        "pair": "SOL/USDC",
+        "type": "SELL",
+        "amount": "2.0 SOL",
+        "price": "$142.10",
+        "status": "Failed",
+    },
+)
+STRATEGY_PERFORMANCE = (
+    {
+        "name": "Mean Reversion",
+        "win_rate": "68%",
+        "pnl": "+$450.20",
+        "status": "Active",
+    },
+    {"name": "Momentum", "win_rate": "55%", "pnl": "+$120.50", "status": "Active"},
+    {
+        "name": "Cross-Chain Arb",
+        "win_rate": "92%",
+        "pnl": "+$890.00",
+        "status": "Active",
+    },
+    {"name": "Grid Bot", "win_rate": "N/A", "pnl": "-$15.00", "status": "Paused"},
+)
+BASE_POSITION_ROWS = (
+    {"asset": "SOL", "amount": 15.5, "entry": 140.50},
+    {"asset": "JUP", "amount": 5000, "entry": 1.15},
+    {"asset": "BONK", "amount": 1_000_000, "entry": 0.000014},
+)
 
 
 def get_sol_price() -> Optional[float]:
-    """Function docstring."""
+    """Fetch the live SOL/USD price used by the terminal dashboard."""
     try:
         url = build_jupiter_quote_url(
             JUPITER_SWAP_V1, SOL_MINT, USDC_MINT, 1_000_000, 10
         )
         req = urllib.request.Request(url, headers=HEADERS)
-        resp = request_json(req, timeout=5, describe="Dashboard SOL quote")
+        resp = request_json(
+            req,
+            timeout=DASHBOARD_PRICE_TIMEOUT_SECONDS,
+            describe="Dashboard SOL quote",
+        )
         return int(resp["outAmount"]) / 1e6 / 0.001
-    except Exception:
+    except Exception as exc:
+        logger.debug("Failed to fetch dashboard SOL price: %s", exc)
         return None
 
 
 def get_wallet_balance() -> float:
-    """Function docstring."""
+    """Fetch the wallet SOL balance used by the terminal dashboard."""
     try:
         from .config import get_pubkey
 
@@ -72,10 +148,15 @@ def get_wallet_balance() -> float:
             data=rpc_body,
             headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
         )
-        resp = request_json(req, timeout=5, describe="Dashboard wallet balance")
+        resp = request_json(
+            req,
+            timeout=DASHBOARD_PRICE_TIMEOUT_SECONDS,
+            describe="Dashboard wallet balance",
+        )
         sol = resp.get("result", {}).get("value", 0) / 1e9
         return sol
-    except Exception:
+    except Exception as exc:
+        logger.debug("Failed to fetch dashboard wallet balance: %s", exc)
         return 0.0
 
 
@@ -124,49 +205,7 @@ def get_header_panel(sol_balance: float, usd_value: float, current_price: float)
 
 
 def get_trade_history_table() -> Any:
-    """Function docstring."""
-    trade_history = [
-        {
-            "time": "10:01:23",
-            "pair": "SOL/USDC",
-            "type": "BUY",
-            "amount": "10.5 SOL",
-            "price": "$145.20",
-            "status": "Success",
-        },
-        {
-            "time": "09:45:11",
-            "pair": "JUP/USDC",
-            "type": "SELL",
-            "amount": "1000 JUP",
-            "price": "$1.20",
-            "status": "Success",
-        },
-        {
-            "time": "09:30:00",
-            "pair": "SOL/USDC",
-            "type": "BUY",
-            "amount": "5.0 SOL",
-            "price": "$144.80",
-            "status": "Success",
-        },
-        {
-            "time": "09:15:22",
-            "pair": "BONK/SOL",
-            "type": "BUY",
-            "amount": "1M BONK",
-            "price": "$0.000015",
-            "status": "Success",
-        },
-        {
-            "time": "08:50:05",
-            "pair": "SOL/USDC",
-            "type": "SELL",
-            "amount": "2.0 SOL",
-            "price": "$142.10",
-            "status": "Failed",
-        },
-    ]
+    """Render the static recent-trades table used by the demo dashboard."""
     table = Table(
         title="Recent Trades History",
         show_header=True,
@@ -180,26 +219,35 @@ def get_trade_history_table() -> Any:
     table.add_column("Price", justify="right", style="green")
     table.add_column("Status")
 
-    for t in trade_history:
-        type_style = "[bold green]BUY[/]" if t["type"] == "BUY" else "[bold red]SELL[/]"
+    for trade in TRADE_HISTORY:
+        type_style = (
+            "[bold green]BUY[/]"
+            if trade["type"] == "BUY"
+            else "[bold red]SELL[/]"
+        )
         status_style = (
             "[bold green]Success[/]"
-            if t["status"] == "Success"
+            if trade["status"] == "Success"
             else "[bold red]Failed[/]"
         )
         table.add_row(
-            t["time"], t["pair"], type_style, t["amount"], t["price"], status_style
+            trade["time"],
+            trade["pair"],
+            type_style,
+            trade["amount"],
+            trade["price"],
+            status_style,
         )
     return table
 
 
 def get_positions_table(current_sol_price: float) -> Any:
-    """Function docstring."""
-    positions = [
+    """Render the mock open-positions view for the dashboard."""
+    positions = (
         {"asset": "SOL", "amount": 15.5, "entry": 140.50, "current": current_sol_price},
         {"asset": "JUP", "amount": 5000, "entry": 1.15, "current": 1.22},
-        {"asset": "BONK", "amount": 1000000, "entry": 0.000014, "current": 0.000016},
-    ]
+        {"asset": "BONK", "amount": 1_000_000, "entry": 0.000014, "current": 0.000016},
+    )
     table = Table(
         title="Open Positions & PnL",
         show_header=True,
@@ -230,23 +278,7 @@ def get_positions_table(current_sol_price: float) -> Any:
 
 
 def get_strategy_performance_table() -> Any:
-    """Function docstring."""
-    strategies = [
-        {
-            "name": "Mean Reversion",
-            "win_rate": "68%",
-            "pnl": "+$450.20",
-            "status": "Active",
-        },
-        {"name": "Momentum", "win_rate": "55%", "pnl": "+$120.50", "status": "Active"},
-        {
-            "name": "Cross-Chain Arb",
-            "win_rate": "92%",
-            "pnl": "+$890.00",
-            "status": "Active",
-        },
-        {"name": "Grid Bot", "win_rate": "N/A", "pnl": "-$15.00", "status": "Paused"},
-    ]
+    """Render the strategy-performance summary shown on the dashboard."""
     table = Table(
         title="Strategy Performance",
         show_header=True,
@@ -258,13 +290,18 @@ def get_strategy_performance_table() -> Any:
     table.add_column("Total PnL", justify="right")
     table.add_column("Status")
 
-    for s in strategies:
-        pnl_style = "[green]" if "+" in s["pnl"] else "[red]"
+    for strategy in STRATEGY_PERFORMANCE:
+        pnl_style = "[green]" if "+" in strategy["pnl"] else "[red]"
         status_style = (
-            "[green]Active[/]" if s["status"] == "Active" else "[yellow]Paused[/]"
+            "[green]Active[/]"
+            if strategy["status"] == "Active"
+            else "[yellow]Paused[/]"
         )
         table.add_row(
-            s["name"], s["win_rate"], f"{pnl_style}{s['pnl']}[/]", status_style
+            strategy["name"],
+            strategy["win_rate"],
+            f"{pnl_style}{strategy['pnl']}[/]",
+            status_style,
         )
     return table
 
@@ -277,7 +314,11 @@ def get_signal_ensemble_panel(ensemble: Any, monitor: Any) -> Any:
     pos_mult = result.position_size_multiplier
     ml_status = monitor.get_status()
 
-    color = "green" if result.direction.value > 0 else "red" if result.direction.value < 0 else "yellow"
+    color = (
+        "green"
+        if result.direction.value > 0
+        else "red" if result.direction.value < 0 else "yellow"
+    )
 
     content = (
         f"[bold white]Master Signal:[/] [bold {color}]{direction}[/]\n"
@@ -291,7 +332,7 @@ def get_signal_ensemble_panel(ensemble: Any, monitor: Any) -> Any:
     for name, weight in result.component_breakdown.items():
         w_color = "green" if weight > 0 else "red" if weight < 0 else "white"
         content += f"  {name}: [{w_color}]{weight:+.2f}[/]\n"
-        
+
     return Panel(
         Text.from_markup(content),
         title="Signal Ensemble Brain",
@@ -336,7 +377,7 @@ def get_profit_locked_panel(portfolio_value: float) -> Any:
 
 
 def generate_layout() -> Any:
-    """Function docstring."""
+    """Create the Rich layout skeleton for the dashboard view."""
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=3),
@@ -359,90 +400,116 @@ def generate_layout() -> Any:
     return layout
 
 
+def _seed_portfolio_history(
+    initial_portfolio_value: float,
+) -> collections.deque[float]:
+    """Create the seeded portfolio time series displayed in the chart."""
+    history: collections.deque[float] = collections.deque(
+        maxlen=DASHBOARD_HISTORY_LENGTH
+    )
+    simulated_value = initial_portfolio_value - 500.0
+    for _ in range(DASHBOARD_HISTORY_LENGTH):
+        simulated_value += random.uniform(*DASHBOARD_SEED_JITTER)
+        history.append(simulated_value)
+    history.append(initial_portfolio_value)
+    return history
+
+
+def _update_mock_signals(ensemble: SignalEnsemble) -> None:
+    """Push randomized signals into the ensemble for demo rendering."""
+    ensemble.update_signal(
+        "mean_reversion",
+        SignalDirection.BULLISH
+        if random.random() > 0.5
+        else SignalDirection.BEARISH,
+        random.uniform(0.3, 0.9),
+    )
+    ensemble.update_signal(
+        "momentum",
+        SignalDirection.BULLISH
+        if random.random() > 0.5
+        else SignalDirection.BEARISH,
+        random.uniform(0.4, 1.0),
+    )
+    ensemble.update_signal("sentiment", SignalDirection.BULLISH, random.uniform(0.5, 0.8))
+    ensemble.update_signal("ml_predictor", SignalDirection.BEARISH, random.uniform(0.6, 0.9))
+    ensemble.update_signal("regime", SignalDirection.NEUTRAL, random.uniform(0.1, 0.5))
+
+
+def _render_dashboard_sections(
+    layout: Layout,
+    *,
+    sol_balance: float,
+    current_portfolio_value: float,
+    current_price: float,
+    portfolio_history: collections.deque[float],
+    ensemble: SignalEnsemble,
+    monitor: ModelMonitor,
+) -> None:
+    """Refresh every dashboard section using the latest simulated state."""
+    layout["header"].update(
+        get_header_panel(sol_balance, current_portfolio_value, current_price)
+    )
+    chart_str = ascii_plot(list(portfolio_history), height=10)
+    layout["chart"].update(
+        Panel(
+            Text(chart_str, style="cyan"),
+            title="Live Portfolio Value (USD)",
+            border_style="cyan",
+        )
+    )
+    layout["positions"].update(
+        Panel(get_positions_table(current_price), border_style="magenta")
+    )
+    layout["trades"].update(Panel(get_trade_history_table(), border_style="cyan"))
+    layout["ensemble"].update(get_signal_ensemble_panel(ensemble, monitor))
+    layout["regime"].update(get_market_regime_panel())
+    layout["profit_locked"].update(get_profit_locked_panel(current_portfolio_value))
+    layout["strategy"].update(
+        Panel(get_strategy_performance_table(), border_style="yellow")
+    )
+
+
 def generate_dashboard() -> None:
-    """Function docstring."""
+    """Run the interactive terminal dashboard."""
     if not HAS_RICH:
         logging.debug("%s", "Install rich: pip install rich")
         return
 
     console = Console()
     layout = generate_layout()
-
-    # Initial fetches
-    initial_sol_price = get_sol_price() or 140.0
+    initial_sol_price = get_sol_price() or DASHBOARD_INITIAL_SOL_PRICE
     sol_balance = get_wallet_balance()
     initial_portfolio_value = (
-        sol_balance * initial_sol_price if sol_balance > 0 else 10000.0
+        sol_balance * initial_sol_price
+        if sol_balance > 0
+        else DASHBOARD_INITIAL_PORTFOLIO_VALUE
     )
-
-    # Pre-populate history with a random walk ending at current portfolio value
-    portfolio_history = collections.deque(maxlen=80)
-    simulated_value = initial_portfolio_value - 500.0
-    for _ in range(80):
-        simulated_value += random.uniform(-40.0, 45.0)
-        portfolio_history.append(simulated_value)
-
-    portfolio_history.append(initial_portfolio_value)
-
+    portfolio_history = _seed_portfolio_history(initial_portfolio_value)
     current_price = initial_sol_price
-
-    console.clear()
-
-    # Initialize Signal Ensemble
     ensemble = SignalEnsemble()
     monitor = ModelMonitor()
 
+    console.clear()
     try:
         with Live(layout, refresh_per_second=2, screen=True):
             while True:
-                # Simulate price updates for the dashboard
-                current_price += random.uniform(-0.1, 0.1)
-
-                # Portfolio value walk
+                current_price += random.uniform(*DASHBOARD_PRICE_JITTER)
                 current_portfolio_value = portfolio_history[-1] + random.uniform(
-                    -10.0, 15.0
+                    *DASHBOARD_PORTFOLIO_JITTER
                 )
                 portfolio_history.append(current_portfolio_value)
-                
-                # Mock update ensemble signals
-                ensemble.update_signal("mean_reversion", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.3, 0.9))
-                ensemble.update_signal("momentum", SignalDirection.BULLISH if random.random() > 0.5 else SignalDirection.BEARISH, random.uniform(0.4, 1.0))
-                ensemble.update_signal("sentiment", SignalDirection.BULLISH, random.uniform(0.5, 0.8))
-                ensemble.update_signal("ml_predictor", SignalDirection.BEARISH, random.uniform(0.6, 0.9))
-                ensemble.update_signal("regime", SignalDirection.NEUTRAL, random.uniform(0.1, 0.5))
-
-                # Update sections
-                layout["header"].update(
-                    get_header_panel(
-                        sol_balance, current_portfolio_value, current_price
-                    )
+                _update_mock_signals(ensemble)
+                _render_dashboard_sections(
+                    layout,
+                    sol_balance=sol_balance,
+                    current_portfolio_value=current_portfolio_value,
+                    current_price=current_price,
+                    portfolio_history=portfolio_history,
+                    ensemble=ensemble,
+                    monitor=monitor,
                 )
-
-                chart_str = ascii_plot(list(portfolio_history), height=10)
-                layout["chart"].update(
-                    Panel(
-                        Text(chart_str, style="cyan"),
-                        title="Live Portfolio Value (USD)",
-                        border_style="cyan",
-                    )
-                )
-
-                layout["positions"].update(
-                    Panel(get_positions_table(current_price), border_style="magenta")
-                )
-                layout["trades"].update(
-                    Panel(get_trade_history_table(), border_style="cyan")
-                )
-                layout["ensemble"].update(get_signal_ensemble_panel(ensemble, monitor))
-                layout["regime"].update(get_market_regime_panel())
-                layout["profit_locked"].update(
-                    get_profit_locked_panel(current_portfolio_value)
-                )
-                layout["strategy"].update(
-                    Panel(get_strategy_performance_table(), border_style="yellow")
-                )
-
-                time.sleep(1)
+                time.sleep(DASHBOARD_REFRESH_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         console.print("[bold red]Dashboard stopped by user.[/]")
 

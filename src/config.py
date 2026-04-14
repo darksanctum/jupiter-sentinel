@@ -2,8 +2,6 @@
 Jupiter Sentinel - Configuration
 """
 
-import logging
-from typing import Any
 import os
 import json
 import stat
@@ -47,6 +45,15 @@ TAKE_PROFIT_BPS = 1500  # 15% take profit
 VOLATILITY_THRESHOLD = 0.03  # 3% price move = volatile
 DESIRED_SCAN_INTERVAL_SECS = 30  # Requested scan cadence before limit adjustment
 PRICE_HISTORY_LEN = 60  # Keep 60 data points (30 min at 30s intervals)
+VOLATILE_MARKET_STOP_LOSS_PCT = 0.15
+VOLATILE_MARKET_TAKE_PROFIT_PCT = 0.30
+DEFAULT_LIVE_TRADER_INTERVAL_SECS = 300
+DEFAULT_LIVE_TRADER_PAIR_LIMIT = 20
+DEFAULT_API_SERVER_HOST = "0.0.0.0"
+DEFAULT_API_SERVER_PORT = 8000
+DEFAULT_WEB_DASHBOARD_HOST = "127.0.0.1"
+DEFAULT_WEB_DASHBOARD_PORT = 8000
+JUPITER_QUOTE_API_V6 = "https://quote-api.jup.ag/v6"
 
 JUPITER_FREE_TIER_CONFIG = build_free_tier_bot_config(
     requested_scan_pairs=len(SCAN_PAIRS),
