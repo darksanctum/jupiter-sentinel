@@ -124,7 +124,9 @@ def test_open_position_caps_size_by_tradable_balance(monkeypatch):
     feed = FakeFeed(price=1.23)
 
     monkeypatch.setattr(risk, "PriceFeed", lambda **kwargs: feed)
-    monkeypatch.setattr(risk, "get_tradable_balance", lambda total_balance: 0.75)
+    monkeypatch.setattr(
+        risk, "get_tradable_balance", lambda total_balance, **kwargs: 0.75
+    )
 
     manager = RiskManager(executor)
     position = manager.open_position(

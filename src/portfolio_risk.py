@@ -431,6 +431,8 @@ class PortfolioRiskManager:
         max_exposure = portfolio_value * self.max_portfolio_exposure_pct
         available_exposure = max(max_exposure - current_exposure, 0.0)
         recommended_size = min(portfolio_value * adjusted_fraction, available_exposure)
+        if self.halt_trading:
+            recommended_size = 0.0
 
         return {
             **kelly,
